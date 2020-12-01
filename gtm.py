@@ -4,155 +4,131 @@ Created on Jun 24, 2019
 @author: Vlad
 '''
 
+import treeutils
+import gtm_old
 import argparse
 import dendropy
 import time
+import os
 
-def merge(constraintTreePaths, startTreePath):
-    constraintTrees = []
-    for tree in constraintTreePaths:
-        constraintTrees.append(dendropy.Tree.get(path=tree, schema="newick"))
+
+def runGtm(constraintTrees, startTree, mode):
+    if mode == "old":
+        return gtm_old.gtmMerge(constraintTrees, startTree)
+    
+    treeutils.annotateTrees(startTree, constraintTrees)
+    treeutils.collapseViolatingEdges(startTree, mode == "convex")   
+    treeutils.rerootConstraintTrees(constraintTrees)
         
-    startTree = dendropy.Tree.get(path=startTreePath, schema="newick")    
-    return gtmMerge(constraintTrees, startTree) 
-
-def gtmMerge(constraintTrees, startTree):
-    nameSpace = startTree.taxon_namespace
-    fullBitmask = nameSpace.all_taxa_bitmask()
-    startTree.is_rooted = False
-    startTree.resolve_polytomies(limit=2)
-    startTree.collapse_basal_bifurcation()
-    startTree.update_bipartitions()
+    if mode == "convex":
+        return joinConvexSubtrees(startTree)
     
-    splitSetMap = {}
-    ctMap = {}
-    for tree in constraintTrees:
-        tree.migrate_taxon_namespace(nameSpace)
-        tree.is_rooted = False
-        tree.resolve_polytomies(limit=2)
-        tree.collapse_basal_bifurcation()
-        tree.update_bipartitions()
+    treeutils.mapConstraintTreeNodes(startTree, constraintTrees)    
+    return resolveTree(startTree)                 
 
-        leafset = tree.seed_node.bipartition.tree_leafset_bitmask
-        splitSetMap[leafset] = set([b.split_bitmask for b in tree.bipartition_encoding])
-        ctMap[leafset] = tree
+def joinConvexSubtrees(startTree):
+    joinPoints = {}
     
-    toRemove = []
-    for e in startTree.preorder_edge_iter():
-        if e.tail_node == None:
+    for node in startTree.preorder_node_iter():                
+        if node.edge.subtree is None and len(node.child_edges()) == 0:
+            subtree = list(node.edge.desc.keys())[0]
+            joinPoints[node] = [subtree.seed_node]
             continue
         
-        split = e.bipartition.split_bitmask
-        e.divider = True
-        
-        for leafset in splitSetMap:
-            masks = splitSetMap[leafset]                  
-            if split & leafset not in masks and ~split & leafset not in masks: 
-                toRemove.append(e.head_node)
+        for adj in node.child_edges():
+            if adj.subtree != node.edge.subtree:
+                joinPoints[node] = []  
+                subtrees = set()
+                if node.edge.subtree is not None:
+                    subtrees.add(node.edge.subtree)
+                    bitmask = node.edge.desc[node.edge.subtree]                            
+                    joinEdge = node.edge.subtree.subEdgeMap[bitmask]
+                    joinPoint = joinEdge.tail_node.new_child()
+                    joinPointChild = joinEdge.tail_node.remove_child(joinEdge.head_node)
+                    joinPoint.add_child(joinPointChild)
+                    joinPoints[node].append(joinPoint)
+                    node.edge.subtree.subEdgeMap[bitmask] = joinPointChild.edge
+                for child in node.child_edges():
+                    if child.subtree is None or child.subtree in subtrees:
+                        continue
+                    subtrees.add(child.subtree)
+                    joinPoints[node].append(child.subtree.seed_node)
                 break
-            if split & leafset != 0 and split & leafset != leafset:
-                if not e.divider:
-                    toRemove.append(e.head_node)
-                    break
-                e.divider = False 
-                e.leafset = leafset      
+    
+    root = startTree.seed_node
+    for node, points in joinPoints.items():
+        point = points[0]
+        if node.edge.subtree is None:
+            if node.parent_node is None:
+                root = point
+            elif node.parent_node is not None:
+                node.parent_node.add_child(point)
+                node.parent_node.remove_child(node)
+        for child in node.child_nodes():
+            if child.edge.subtree is None:
+                node.remove_child(child)
+                point.add_child(child)
+        for child in points[1:]:
+            for gchild in child.child_nodes():
+                child.remove_child(gchild)
+                point.add_child(gchild)
+
+
+    return dendropy.Tree(seed_node = root)    
+
+def resolveTree(startTree):
+    used = set()
+    for edge in startTree.postorder_edge_iter():
+        head, tail = edge.head_node, edge.tail_node
+        for subtree, bitmask in edge.desc.items():
+            if (subtree, bitmask) in used:
+                continue
+            used.add((subtree, bitmask))
+            used.add((subtree, bitmask ^ subtree.startTreeBitmask))
+            edgeSet = subtree.fullSubEdgeMap.get(bitmask, [])
+            edgeSet.extend(reversed(subtree.fullSubEdgeMap.get(bitmask ^ subtree.startTreeBitmask, [])))
+                
+            for branch in edgeSet:
+                if branch.tail_node in subtree.nodeMap:
+                    joinPoint = subtree.nodeMap[branch.tail_node]
+                else:
+                    joinPoint = dendropy.Node()
+                    if tail is not None:
+                        tail.remove_child(head)
+                        tail.add_child(joinPoint)
+                    
+                    joinPoint.add_child(head)
+                    head = joinPoint
+                    joinPoint.edge.desc = dict(edge.desc)
+                    
+                branch.tail_node.remove_child(branch.head_node)         
+                joinPoint.add_child(branch.head_node)
                         
-    for n in toRemove:
-        childs = n.child_nodes()
-        for child in childs:
-            n.remove_child(child)
-            n.parent_node.add_child(child)
-        n.parent_node.remove_child(n)
-    
-    result = rejoin(startTree, ctMap)
-    return result
-
-
-def rejoin(tree, ctMap):  
-    treeleaves = tree.seed_node.tree_leafset_bitmask    
-    if treeleaves in ctMap:
-        return ctMap[treeleaves]
-    
-    if len(tree.seed_node.child_nodes()) == 2:
-        tree.collapse_basal_bifurcation()
-
-    for n in tree.preorder_internal_node_iter():
-        childs = n.child_nodes()
-        if childs[0].edge.divider:
-            newGroup = [childs[0]]
-        else:
-            newGroup = []
-            if n.edge.tail_node != None:
-                leafs =  n.edge.leafset
-            else:
-                leafs = childs[0].edge.leafset
-            
-            for child in childs:
-                if child.edge.divider:
-                    newGroup = [child]
-                    break
-                elif child.edge.leafset != leafs:
-                    newGroup.append(child)
-                  
-        if len(newGroup) > 0:
-                  
-            t2l = 0
-            for child in newGroup:
-                t2l = t2l | child.edge.bipartition.leafset_bitmask
-                n.remove_child(child)                
-            t1l = treeleaves ^ t2l
-            
-            if len(newGroup) == 1:
-                newNode = newGroup[0]
-            #elif len(newGroup) == 2:
-            #    newNode = newGroup[0]
-            #    newNode.add_child(newGroup[1]) #WRONG FIX
-            else:
-                newNode = dendropy.Node()
-                for child in newGroup:
-                    newNode.add_child(child)                    
-                       
-            a1 = n.child_edges()[0].bipartition.leafset_bitmask            
-            a2 = newNode.child_edges()[0].bipartition.leafset_bitmask 
-
-            t2 = dendropy.Tree(seed_node=newNode, taxon_namespace = tree.taxon_namespace)       
-            t2.seed_node.tree_leafset_bitmask = t2l     
-
-            tree.suppress_unifurcations()            
-            tree.seed_node.tree_leafset_bitmask = t1l
-                          
-            r1 = rejoin(tree, ctMap)
-            r2 = rejoin(t2, ctMap)            
-            
-            for e in r1.edges():
-                if e.bipartition.leafset_bitmask == a1 or e.bipartition.leafset_bitmask == a1 ^ r1.seed_node.tree_leafset_bitmask:
-                    n1 = e.tail_node.new_child()
-                    n1.add_child(e.tail_node.remove_child(e.head_node))
-                    break
-            for e in r2.edges():
-                if e.bipartition.leafset_bitmask == a2 or e.bipartition.leafset_bitmask == a2 ^ r2.seed_node.tree_leafset_bitmask:
-                    n2 = e.tail_node.new_child()
-                    n2.add_child(e.tail_node.remove_child(e.head_node))
-                    break   
-
-            r2.reseed_at(n2,update_bipartitions=False,
-            collapse_unrooted_basal_bifurcation=False,
-            suppress_unifurcations=False)
-            n1.add_child(n2)
-            
-            r1.update_bipartitions()
-            return r1
+    return startTree
         
 def main(args):   
     startTime = time.time()
     
     startTreePath = args.start
-    constraintTreePaths = args.trees
     outputPath = args.output
-    resultTree = merge(constraintTreePaths, startTreePath)
-    resultTreeString = resultTree.as_string(schema="newick")
-    with open(outputPath, "w") as f:
-        f.write(resultTreeString[5:])        
+    mode = args.mode
+    
+    if mode not in ["convex", "old", "fp"]:
+        raise Exception("Mode {} not recognized.".format(mode))
+    
+    constraintTreePaths = []
+    for p in args.trees:
+        path = os.path.abspath(p)
+        if os.path.isdir(path):
+            for filename in os.listdir(path):
+                constraintTreePaths.append(os.path.join(path, filename))
+        else:
+            constraintTreePaths.append(path)
+    
+    constraintTrees = [treeutils.loadTree(path) for path in constraintTreePaths]
+    startTree = treeutils.loadTree(startTreePath)    
+    resultTree = runGtm(constraintTrees, startTree, mode)
+    treeutils.writeTree(resultTree, outputPath)       
     
     endTime = time.time()
     print("Finished GTM in {} seconds..".format(endTime-startTime))
@@ -170,5 +146,9 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", type=str,
                         help="Output tree",
                         required=True)
+    
+    parser.add_argument("-m", "--mode", type=str,
+                        help="Desired GTM mode (convex|fp|old)",
+                        required=False, default="convex")
 
     main(parser.parse_args())
