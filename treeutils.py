@@ -25,6 +25,7 @@ def annotateTrees(startTree, constraintTrees):
     for tree in constraintTrees:
         tree.startTreeTaxa = set()
         taxa = [n.taxon for n in tree.leaf_nodes()]
+        tree.numTaxa = len(taxa)
         for taxon in taxa:
             taxaSubtrees[taxon.label] = tree
             taxaBitmasks[taxon.label] = tree.taxon_namespace.taxon_bitmask(taxon)
@@ -52,7 +53,7 @@ def annotateTrees(startTree, constraintTrees):
             for child in edge.head_node.child_edges():
                 for subtree, bitmask in child.desc.items():
                     edge.desc[subtree] = edge.desc.get(subtree, 0) | bitmask
-
+                
 def populateEdgeMap(tree):
     tree.edgeMap = {}
     tree.subEdgeMap = {}
@@ -98,6 +99,10 @@ def collapseEdges(headNodes):
             
 def rerootConstraintTrees(trees):
     for tree in trees:        
+        if tree.numTaxa < 3:
+            populateEdgeMap(tree)
+            continue
+        
         rootEdge = None
         if tree.rootBipartition is None and len(tree.seed_node.child_edges()) > 0:
             rootEdge = tree.seed_node.child_edges()[0]
@@ -111,6 +116,11 @@ def rerootConstraintTrees(trees):
         if rootEdge is not None:    
             joinPoint = rootEdge.tail_node.new_child()
             joinPoint.add_child(rootEdge.tail_node.remove_child(rootEdge.head_node))
+            try:
+                joinPoint.edge.length = rootEdge.length / 2
+                rootEdge.length = rootEdge.length / 2
+            except:
+                pass
             tree.reseed_at(joinPoint, update_bipartitions=True,
             collapse_unrooted_basal_bifurcation=False,
             suppress_unifurcations=False)
@@ -129,7 +139,7 @@ def mapConstraintTreeNodes(startTree, constraintTrees):
     toRemove = []
     for tree in constraintTrees:
         for edge in tree.postorder_edge_iter():
-            edge.desc = {}
+            #edge.desc = {}
             bitmask = edge.bipartition.leafset_bitmask & tree.startTreeBitmask
             if bitmask != 0:
                 if bitmask not in bipartSets[tree] and bitmask ^ tree.startTreeBitmask not in bipartSets[tree]:
