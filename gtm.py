@@ -21,8 +21,20 @@ def runGtm(constraintTrees, startTree, mode):
         treeutils.annotateTrees(startTree, constraintTrees)  
         treeutils.collapseViolatingEdges(startTree, True)   
         treeutils.rerootConstraintTrees(constraintTrees)
-        mapTreeNodes(startTree)
-        return assembleTree(startTree, constraintTrees)
+        #mapTreeNodes(startTree)
+        #return assembleTree(startTree, constraintTrees)
+        treeutils.distributeNodes(startTree, constraintTrees)
+        #startTree.suppress_unifurcations()
+        treeutils.dealWithEdgeLengths(startTree)
+        return startTree
+    
+    if mode == "newfp":
+        treeutils.annotateTrees(startTree, constraintTrees)  
+        treeutils.collapseViolatingEdges(startTree, False)   
+        treeutils.rerootConstraintTrees(constraintTrees)
+        treeutils.distributeNodes(startTree, constraintTrees)
+        treeutils.dealWithEdgeLengths(startTree)
+        return startTree
     
     treeutils.annotateTrees(startTree, constraintTrees)  
     treeutils.collapseViolatingEdges(startTree, mode == "convex")   
