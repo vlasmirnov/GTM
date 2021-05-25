@@ -10,7 +10,6 @@ import argparse
 import dendropy
 import time
 import os
-from platform import node
 
 
 def runGtm(constraintTrees, startTree, mode):
@@ -21,8 +20,6 @@ def runGtm(constraintTrees, startTree, mode):
         treeutils.annotateTrees(startTree, constraintTrees)  
         treeutils.collapseViolatingEdges(startTree, True)   
         treeutils.rerootConstraintTrees(constraintTrees)
-        #mapTreeNodes(startTree)
-        #return assembleTree(startTree, constraintTrees)
         treeutils.distributeNodes(startTree, constraintTrees)
         #startTree.suppress_unifurcations()
         treeutils.dealWithEdgeLengths(startTree)
@@ -45,78 +42,6 @@ def runGtm(constraintTrees, startTree, mode):
     
     treeutils.mapConstraintTreeNodes(startTree, constraintTrees)    
     return resolveTree(startTree)                 
-
-def mapTreeNodes(startTree):
-    edgeMapping = {}
-    for node in startTree.preorder_node_iter():
-        if node.edge.subtree is None:
-            node.mappedNode = node
-            if node != startTree.seed_node:
-                node.label = "scaffold"
-        else:
-            subtree, bitmask = node.edge.subtree, node.edge.desc[node.edge.subtree]
-            cEdge = subtree.subEdgeMap[bitmask]
-            node.mappedNode = cEdge.head_node
-            for child in node.child_edges():
-                if child.desc.get(subtree) == bitmask:
-                    edgeMapping[cEdge] = edgeMapping.get(cEdge, []) + [node]
-    
-    for edge, nodes in edgeMapping.items():
-        for node in nodes:
-            joinPoint = edge.tail_node.new_child()
-            joinPoint.add_child(edge.tail_node.remove_child(edge.head_node))
-            try:
-                joinPoint.edge.length = edge.length / (len(nodes) + 1)
-            except:
-                pass
-            node.mappedNode = joinPoint
-        try:
-            edge.length = edge.length / (len(nodes) + 1)
-        except:
-            pass
-
-def assembleTree(startTree, constraintTrees):
-    joinPoints = set()
-    unjoins = []
-    for node in startTree.preorder_node_iter():
-        if node.edge.subtree is None and len(node.child_edges()) == 0:
-            subtree = list(node.edge.desc.keys())[0]
-            joinPoints.update(getJoinPoints(node, subtree))
-            continue
-               
-        for child in node.child_edges():
-            if child.subtree != node.edge.subtree:
-                unjoins.append(child.head_node)
-                if child.subtree != None:
-                    joinPoints.update(getJoinPoints(node, child.subtree))
-                    #joinPoints.add((node.mappedNode, child.subtree.seed_node))
-                else:
-                    joinPoints.add((node.mappedNode, child.head_node))
-                
-    for child in unjoins:
-        child.parent_node.remove_child(child)
-    
-    for tree in constraintTrees:
-        if tree not in startTree.seed_node.edge.desc:
-            attachPoint = startTree.seed_node
-            joinPoints.update(getJoinPoints(attachPoint, tree))
-                
-    result = glueJoinPoints(startTree, joinPoints)
-    result.collapse_basal_bifurcation()
-    return result     
-
-def getJoinPoints(node, subtree):
-    if len(subtree.seed_node.child_edges()) == 0:
-        return [(node.mappedNode, subtree.seed_node)]
-    else:
-        return [(node.mappedNode, child.head_node) for child in subtree.seed_node.child_edges()]
-
-def glueJoinPoints(startTree, joinPoints):  
-    for parent, child in joinPoints:
-        if child.parent_node is not None:
-            child.parent_node.remove_child(child)
-        parent.add_child(child)
-    return dendropy.Tree(seed_node = startTree.seed_node)  
 
 def joinConvexSubtrees(startTree):
     joinPoints = {}
@@ -164,7 +89,6 @@ def joinConvexSubtrees(startTree):
             for gchild in child.child_nodes():
                 child.remove_child(gchild)
                 point.add_child(gchild)
-
 
     return dendropy.Tree(seed_node = root)    
 

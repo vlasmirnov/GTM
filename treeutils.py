@@ -19,21 +19,21 @@ def writeTree(tree, treePath):
         f.write(treeString) 
 
 def annotateTrees(startTree, constraintTrees):
-    startTree.taxaSubtrees = {}
-    startTree.taxaBitmasks = {}
+    startTree.taxonMap = {n.taxon.label : n for n in startTree.leaf_nodes()}
     
     for tree in constraintTrees:
         tree.startTreeTaxa = set()
         taxa = [n.taxon for n in tree.leaf_nodes()]
         tree.numTaxa = len(taxa)
         for taxon in taxa:
-            startTree.taxaSubtrees[taxon.label] = tree
-            startTree.taxaBitmasks[taxon.label] = tree.taxon_namespace.taxon_bitmask(taxon)
-    
+            taxon.taxonSubtree = tree
+            taxon.taxonBitmask = tree.taxon_namespace.taxon_bitmask(taxon)
+            if taxon.label in startTree.taxonMap:
+                startTree.taxonMap[taxon.label].taxon = taxon
+            
     for n in startTree.leaf_nodes():
-        taxon = n.taxon.label
-        subtree  = startTree.taxaSubtrees[taxon]
-        subtree.startTreeTaxa.add(taxon)
+        subtree = n.taxon.taxonSubtree
+        subtree.startTreeTaxa.add(n.taxon.label)
         
     for tree in constraintTrees:
         tree.rootBipartition = None
@@ -42,99 +42,70 @@ def annotateTrees(startTree, constraintTrees):
         populateEdgeMap(tree)
         populateEdgeLengthMap(tree)
     
-    populateEdgeDesc(startTree)
+    for edge in startTree.postorder_edge_iter():
+        populateEdgeDesc(edge)
     populateStartTreeEdgeLengthMap(startTree)
 
-def populateEdgeDesc(startTree):
-    for edge in startTree.postorder_edge_iter():
-        edge.desc = {}
-        
-        if len(edge.head_node.child_edges()) == 0:
-            taxon = edge.head_node.taxon.label
-            subtree = startTree.taxaSubtrees[taxon]
-            edge.desc = {subtree : startTree.taxaBitmasks[taxon]}
-        else:
-            for child in edge.head_node.child_edges():
-                for subtree, bitmask in child.desc.items():
-                    edge.desc[subtree] = edge.desc.get(subtree, 0) | bitmask
+def populateEdgeDesc(edge):
+    if len(edge.head_node.child_edges()) == 0:
+        edge.desc = {edge.head_node.taxon.taxonSubtree : edge.head_node.taxon.taxonBitmask}
+    else:
+        edge.desc = combineDescMaps([child.desc for child in edge.head_node.child_edges()])
+
+def combineDescMaps(descMaps):
+    newDesc = {}
+    for desc in descMaps:
+        for subtree, bitmask in desc.items():
+            newDesc[subtree] = newDesc.get(subtree, 0) | bitmask
+    return newDesc
 
 def distributeNodes(startTree, constraintTrees):
     for tree in constraintTrees:
         recurseDistributeNodes(startTree.seed_node, tree.seed_node, tree)        
             
 def recurseDistributeNodes(sNode, cNode, cTree):
-    internalChilds = [e for e in sNode.child_edges() if len(e.desc) > 1 and cTree in e.desc]
-    treeChilds = [e for e in sNode.child_edges() if len(e.desc) == 1 and cTree in e.desc]
-    internalMasks = {e.desc[cTree] : e for e in internalChilds}
-    treeMasks = {e.desc[cTree] : e for e in treeChilds}
-    
+    childs = [e for e in sNode.child_edges() if cTree in e.desc]
+    maskEdges = {e.desc[cTree] : e for e in childs}
     stack = [cNode]
+    
     while stack:
         cNode = stack.pop()        
         cMask = cNode.edge.bipartition.leafset_bitmask & cTree.startTreeBitmask
         cNode.edge.desc = {cTree : cMask} if cMask > 0 else {}
+        
         if cMask == 0:
             attachNode(sNode, cNode)
-        elif cMask in internalMasks:
-            recurseDistributeNodes(internalMasks[cMask].head_node, cNode, cTree)
+        elif cMask in maskEdges and len(maskEdges[cMask].desc) > 1:
+            recurseDistributeNodes(maskEdges[cMask].head_node, cNode, cTree)
         else:
-            subInternalMasks = [mask for mask in internalMasks if mask & cMask == mask]
-            subTreeMasks = [mask for mask in treeMasks if mask & cMask == mask]
-            if len(subTreeMasks) > 0 and len(subInternalMasks) == 0:
-                for mask in subTreeMasks:
-                    sNode.remove_child(treeMasks[mask].head_node)
-                attachNode(sNode, cNode)
+            subMasks = [mask for mask in maskEdges if mask & cMask == mask]
+            
+            if not any(len(maskEdges[mask].desc) > 1 for mask in subMasks):
+                for mask in subMasks:
+                    sNode.remove_child(maskEdges[mask].head_node)
+                attachNode(sNode, cNode)                
+            elif len(subMasks) < len(maskEdges):
+                newDesc = combineDescMaps([maskEdges[mask].desc for mask in subMasks])
+                if not any(b not in s.subEdgeMap and b ^ s.startTreeBitmask not in s.subEdgeMap for s, b in newDesc.items()):
+                    newNode = resolvePolytomy(sNode, [maskEdges[m].head_node for m in subMasks])
+                    recurseDistributeNodes(newNode, cNode, cTree)
+                else:
+                    stack.extend(cNode.child_nodes())
             else:
                 stack.extend(cNode.child_nodes())
+
+def resolvePolytomy(node, children):
+    newNode = dendropy.Node()
+    node.add_child(newNode)
+    for child in children:
+        newNode.add_child(node.remove_child(child))
+    populateEdgeDesc(newNode.edge)
+    return newNode    
 
 def attachNode(sNode, cNode):
     if cNode.parent_node is not None:
         cNode.parent_node.remove_child(cNode)
     sNode.add_child(cNode)
-
-def dealWithEdgeLengths(startTree):   
-    populateEdgeDesc(startTree)
-    edgeMap = {}
-    sEdgeMap = {}
-    
-    for edge in startTree.preorder_edge_iter():
-        if edge.tail_node is None:
-            continue
-        edge.length = None
-        
-        splits = [(subtree, bitmask) for subtree, bitmask in edge.desc.items() if bitmask != subtree.taxon_namespace.all_taxa_bitmask()]
-        if len(splits) != 1:
-            edge.head_node.label = "scaffold"
-            for e in edge.get_adjacent_edges():
-                if e.head_node.label != "scaffold":
-                    e.head_node.label = "scaffold_adjacent"
-            
-            desc = {subtree : subtree.startTreeBitmask & bitmask for subtree, bitmask in edge.desc.items()}
-            key = frozenset(desc)
-            sEdgeMap[startTree, key] = sEdgeMap.get((startTree, key), []) + [edge]
-            
-        for subtree, bitmask in splits:
-            bitmask = bitmask if bitmask in subtree.edgeLengthMap else bitmask ^ subtree.taxon_namespace.all_taxa_bitmask()
-            edgeMap[subtree, bitmask] = edgeMap.get((subtree, bitmask), []) + [edge]
-    
-    for key, edges in sEdgeMap.items():
-        subtree, bitmask = key
-        for edge in edges:
-            try:
-                edge.length = subtree.edgeLengthMap[bitmask] / len(edges)
-            except:
-                pass
-        
-    for key, edges in edgeMap.items():
-        subtree, bitmask = key
-        cEdges = [e for e in edges if e.length is None]
-        sEdges = [e for e in edges if e.length is not None]
-        sSum = sum([e.length for e in sEdges])
-        for edge in cEdges:
-            try:
-                edge.length = (subtree.edgeLengthMap[bitmask] - sSum) / len(cEdges)
-            except:
-                pass
             
 def populateEdgeMap(tree):
     tree.edgeMap = {}
@@ -214,6 +185,51 @@ def rerootConstraintTrees(trees):
             collapse_unrooted_basal_bifurcation=False,
             suppress_unifurcations=False)
             populateEdgeMap(tree)
+
+def dealWithEdgeLengths(startTree):  
+    for edge in startTree.postorder_edge_iter(): 
+        populateEdgeDesc(edge)
+    edgeMap = {}
+    sEdgeMap = {}
+    
+    for edge in startTree.preorder_edge_iter():
+        if edge.tail_node is None:
+            continue
+        edge.length = None
+        
+        splits = [(subtree, bitmask) for subtree, bitmask in edge.desc.items() if bitmask != subtree.taxon_namespace.all_taxa_bitmask()]
+        if len(splits) != 1:
+            edge.head_node.label = "scaffold"
+            for e in edge.get_adjacent_edges():
+                if e.head_node.label != "scaffold":
+                    e.head_node.label = "scaffold_adjacent"
+            
+            desc = {subtree : subtree.startTreeBitmask & bitmask for subtree, bitmask in edge.desc.items()}
+            key = frozenset(desc)
+            sEdgeMap[startTree, key] = sEdgeMap.get((startTree, key), []) + [edge]
+            
+        for subtree, bitmask in splits:
+            bitmask = bitmask if bitmask in subtree.edgeLengthMap else bitmask ^ subtree.taxon_namespace.all_taxa_bitmask()
+            edgeMap[subtree, bitmask] = edgeMap.get((subtree, bitmask), []) + [edge]
+    
+    for key, edges in sEdgeMap.items():
+        subtree, bitmask = key
+        for edge in edges:
+            try:
+                edge.length = subtree.edgeLengthMap[bitmask] / len(edges)
+            except:
+                pass
+        
+    for key, edges in edgeMap.items():
+        subtree, bitmask = key
+        cEdges = [e for e in edges if e.length is None]
+        sEdges = [e for e in edges if e.length is not None]
+        sSum = sum([e.length for e in sEdges])
+        for edge in cEdges:
+            try:
+                edge.length = (subtree.edgeLengthMap[bitmask] - sSum) / len(cEdges)
+            except:
+                pass
 
 def mapConstraintTreeNodes(startTree, constraintTrees):
     startTree.nodeMap = {}
