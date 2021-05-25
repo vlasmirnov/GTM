@@ -64,30 +64,30 @@ def distributeNodes(startTree, constraintTrees):
         recurseDistributeNodes(startTree.seed_node, tree.seed_node, tree)        
             
 def recurseDistributeNodes(sNode, cNode, cTree):
-    childs = [e for e in sNode.child_edges() if cTree in e.desc]
-    maskEdges = {e.desc[cTree] : e for e in childs}
     stack = [cNode]
-    
     while stack:
         cNode = stack.pop()        
         cMask = cNode.edge.bipartition.leafset_bitmask & cTree.startTreeBitmask
         cNode.edge.desc = {cTree : cMask} if cMask > 0 else {}
+        maskEdges = {e.desc[cTree] : e for e in sNode.child_edges() if cTree in e.desc and e.desc[cTree] & cMask == e.desc[cTree]}
         
         if cMask == 0:
-            attachNode(sNode, cNode)
+            if len(sNode.child_edges())>1:
+                resolvePolytomy(sNode, sNode.child_nodes())
+            attachNodetoNode(sNode, cNode)
         elif cMask in maskEdges and len(maskEdges[cMask].desc) > 1:
             recurseDistributeNodes(maskEdges[cMask].head_node, cNode, cTree)
-        else:
-            subMasks = [mask for mask in maskEdges if mask & cMask == mask]
-            
-            if not any(len(maskEdges[mask].desc) > 1 for mask in subMasks):
-                for mask in subMasks:
+        else:            
+            if not any(len(maskEdges[mask].desc) > 1 for mask in maskEdges):
+                for mask in maskEdges:
                     sNode.remove_child(maskEdges[mask].head_node)
-                attachNode(sNode, cNode)                
-            elif len(subMasks) < len(maskEdges):
-                newDesc = combineDescMaps([maskEdges[mask].desc for mask in subMasks])
+                #if len(sNode.child_edges())>1:
+                #    print(sNode, len(sNode.child_edges()), len(maskEdges), len(subMasks))
+                attachNodetoNode(sNode, cNode) 
+            elif len(maskEdges) < len(sNode.child_edges()):
+                newDesc = combineDescMaps([maskEdges[mask].desc for mask in maskEdges])
                 if not any(b not in s.subEdgeMap and b ^ s.startTreeBitmask not in s.subEdgeMap for s, b in newDesc.items()):
-                    newNode = resolvePolytomy(sNode, [maskEdges[m].head_node for m in subMasks])
+                    newNode = resolvePolytomy(sNode, [maskEdges[m].head_node for m in maskEdges])
                     recurseDistributeNodes(newNode, cNode, cTree)
                 else:
                     stack.extend(cNode.child_nodes())
@@ -102,7 +102,7 @@ def resolvePolytomy(node, children):
     populateEdgeDesc(newNode.edge)
     return newNode    
 
-def attachNode(sNode, cNode):
+def attachNodetoNode(sNode, cNode):
     if cNode.parent_node is not None:
         cNode.parent_node.remove_child(cNode)
     sNode.add_child(cNode)
