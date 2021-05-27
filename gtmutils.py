@@ -33,3 +33,21 @@ def extractSpanningTree(startTree, constraintTrees, numLeaves):
     
     spanningTree = startTree.extract_tree_with_taxa([l.taxon for l in leaves])
     return spanningTree
+
+def getSpanningTreeEdgeSources(startTree, spanningTree):
+    edgeSources = set()       
+    for edge in startTree.preorder_edge_iter():
+        if edge.tail_node is None:
+            continue  
+        splits = [s for s, b in edge.desc.items() if s is not None and b != s.taxon_namespace.all_taxa_bitmask()]
+        if edge.head_node.label in ("scaffold", "scaffold_adjacent") and len(splits) == 1:
+            edgeSources.add((edge, splits[0]))
+    return edgeSources
+
+def applySpanningTreeBranchLengths(startTree, spanningTree):
+    treeutils.annotateTrees(startTree, [spanningTree])
+    treeutils.rerootConstraintTrees(startTree, [spanningTree])    
+    edgeMap = treeutils.buildEdgeLengthMap(startTree)
+    edgeSources = getSpanningTreeEdgeSources(startTree, spanningTree)
+    treeutils.applyEdgeLengths(edgeSources, edgeMap)
+    
