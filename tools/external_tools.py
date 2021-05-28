@@ -7,8 +7,10 @@ Created on May 25, 2021
 import os
 import subprocess
 import shutil
-import random
+from configs import Configs
 
+CLUSTAL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clustal/clustalo")
+FASTTREE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fasttree/FastTree")
 RAXML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raxmlng/raxml-ng")
 
 def runCommand(**kwargs):
@@ -27,6 +29,37 @@ def runCommand(**kwargs):
     for srcPath, destPath in kwargs.get("fileCopyMap", {}).items():
         shutil.move(srcPath, destPath)
 
+def runClustalOmegaGuideTree(fastaPath, workingDir, outputPath, threads = 1):
+    tempPath = os.path.join(os.path.dirname(outputPath), "temp_{}".format(os.path.basename(outputPath)))
+    args = [CLUSTAL_PATH]
+    args.extend(["-i", fastaPath, "--max-hmm-iterations=-1", "--guidetree-out={}".format(tempPath)])
+    args.extend(["--threads={}".format(threads)])
+    taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {tempPath : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
+    return taskArgs
+
+def runFastTree(fastaFilePath, workingDir, outputPath, mode = "normal", intree = None):
+    tempPath = os.path.join(os.path.dirname(outputPath), "temp_{}".format(os.path.basename(outputPath)))
+    
+    args = [FASTTREE_PATH]
+    if Configs.inferDataType(fastaFilePath) == "protein":
+        args.extend(["-lg"])
+    else:
+        args.extend(["-nt", "-gtr"])
+    
+    if intree is not None:
+        args.extend(["-intree", intree])
+    
+    if mode == "fast":
+        args.extend(["-fastest", "-nosupport"]) 
+    elif mode == "faster":
+        args.extend(["-fastest", "-nosupport", "-mlnni", "4" ]) 
+    elif mode == "noml":
+        args.extend(["-fastest", "-nosupport", "-noml"])
+    
+    args.extend([fastaFilePath, ">", tempPath])
+    taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {tempPath : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
+    return taskArgs
+
 def runRaxmlNg(fastaFilePath, workingDir, startTreePath, constraintTreePath, outputPath, threads = 8):
     # raxml-ng --msa prim.phy --model GTR+G --prefix T4 --threads 2 --seed 2 --tree pars{25},rand{25}
     baseName = os.path.basename(outputPath).replace(".","")
@@ -39,8 +72,10 @@ def runRaxmlNg(fastaFilePath, workingDir, startTreePath, constraintTreePath, out
             "--threads", str(threads),
             "--seed", str(seed)]
     
-    #args.extend(["--model", "LG+G"])
-    args.extend(["--model", "GTR+G"])
+    if Configs.inferDataType(fastaFilePath) == "protein":
+        args.extend(["--model", "LG+G"])
+    else:
+        args.extend(["--model", "GTR+G"])
     
     if constraintTreePath is not None:
         args.extend(["--tree-constraint", constraintTreePath])
@@ -65,9 +100,13 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPa
             "--prefix", baseName,
             "--threads", "8",
             "--tree", treePath]  
+    
     if model is not None:
         args.extend(["--model", model])
+    elif Configs.inferDataType(fastaFilePath) == "protein":
+        args.extend(["--model", "LG+G"])
     else:
-        args.extend(["--model", "GTR+G"])  
+        args.extend(["--model", "GTR+G"])
+        
     taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {outFile : outputModelPath, raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
     return taskArgs

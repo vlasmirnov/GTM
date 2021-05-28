@@ -207,29 +207,39 @@ def dealWithEdgeLengths(startTree):
             collapseEdges([childs[0].head_node])
         else:
             collapseEdges([childs[1].head_node])
-        
+    
+    labelScaffold(startTree)    
     scaffoldEdgeSources, constraintEdgeSources = getEdgeSources(startTree)
     edgeMap = buildEdgeLengthMap(startTree)
-    applyEdgeLengths(scaffoldEdgeSources, edgeMap)
+    #applyEdgeLengths(scaffoldEdgeSources, edgeMap)
     applyEdgeLengths(constraintEdgeSources, edgeMap)
 
-def getEdgeSources(startTree): 
-    scaffoldEdgeSources = set()
-    constraintEdgeSources = set()
-       
+def labelScaffold(startTree):
+    for edge in startTree.preorder_edge_iter(): 
+        edge.head_node.label = None
+        
     for edge in startTree.preorder_edge_iter():
         if edge.tail_node is None:
             continue  
-        #edge.length = None      
         splits = [s for s, b in edge.desc.items() if s is not None and b != s.taxon_namespace.all_taxa_bitmask()]
         if len(splits) != 1:
             edge.head_node.label = "scaffold"
             for e in edge.get_adjacent_edges():
                 if e.head_node.label != "scaffold":
                     e.head_node.label = "scaffold_adjacent"
+        else:
+            edge.subtree = splits[0]
+
+def getEdgeSources(startTree): 
+    scaffoldEdgeSources = set()
+    constraintEdgeSources = set()
+    for edge in startTree.preorder_edge_iter():
+        if edge.tail_node is None:
+            continue  
+        if edge.head_node.label == "scaffold":
             scaffoldEdgeSources.add((edge, startTree))
         else:
-            constraintEdgeSources.add((edge, splits[0]))
+            constraintEdgeSources.add((edge, edge.subtree))
     return scaffoldEdgeSources, constraintEdgeSources
 
 def buildEdgeLengthMap(startTree):
