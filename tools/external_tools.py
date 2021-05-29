@@ -60,7 +60,7 @@ def runFastTree(fastaFilePath, workingDir, outputPath, mode = "normal", intree =
     taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {tempPath : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
     return taskArgs
 
-def runRaxmlNg(fastaFilePath, workingDir, startTreePath, constraintTreePath, outputPath, threads = 8):
+def runRaxmlNg(fastaFilePath, model, workingDir, startTreePath, constraintTreePath, outputPath, threads = 8):
     # raxml-ng --msa prim.phy --model GTR+G --prefix T4 --threads 2 --seed 2 --tree pars{25},rand{25}
     baseName = os.path.basename(outputPath).replace(".","")
     raxmlFile = os.path.join(workingDir, "{}.raxml.bestTree".format(baseName))
@@ -72,7 +72,9 @@ def runRaxmlNg(fastaFilePath, workingDir, startTreePath, constraintTreePath, out
             "--threads", str(threads),
             "--seed", str(seed)]
     
-    if Configs.inferDataType(fastaFilePath) == "protein":
+    if model is not None:
+        args.extend(["--model", model])
+    elif Configs.inferDataType(fastaFilePath) == "protein":
         args.extend(["--model", "LG+G"])
     else:
         args.extend(["--model", "GTR+G"])
@@ -92,7 +94,8 @@ def runRaxmlNg(fastaFilePath, workingDir, startTreePath, constraintTreePath, out
 def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPath, outputPath):
     #raxml-ng --evaluate --msa prim.phy --threads 2 --model GTR+G+FC --tree T3.raxml.bestTree --prefix E4
     baseName = os.path.basename(outputPath).replace(".","")
-    outFile = os.path.join(workingDir, "{}.raxml.log".format(baseName))
+    logFile = os.path.join(workingDir, "{}.raxml.log".format(baseName))
+    modelFile = os.path.join(workingDir, "{}.raxml.bestModel".format(baseName))
     raxmlFile = os.path.join(workingDir, "{}.raxml.bestTree".format(baseName))
     args = [RAXML_PATH,
             "--evaluate",
@@ -108,5 +111,5 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPa
     else:
         args.extend(["--model", "GTR+G"])
         
-    taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {outFile : outputModelPath, raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
+    taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {modelFile : outputModelPath, raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
     return taskArgs

@@ -10,7 +10,7 @@ import os
 import shutil
 import sequenceutils
 import random
-from tools import external_tools
+from tools import external_tools, methods
 
 def extractSpanningTree(startTree, constraintTrees, numLeaves):
     spanningTree = startTree.extract_tree()
@@ -38,28 +38,6 @@ def extractSpanningTree(startTree, constraintTrees, numLeaves):
     
     spanningTree = startTree.extract_tree_with_taxa([l.taxon for l in leaves])
     return spanningTree
-
-def computeSpanningTree(tree, alignmentPath, treePath):
-    baseName = os.path.basename(treePath).split(".")[0]
-    unoptimizedPath = os.path.join(os.path.dirname(treePath), "unoptimized_{}.tre".format(baseName))
-    workingDir = os.path.join(os.path.dirname(treePath), "raxml_{}".format(baseName))
-    outModelPath = os.path.join(os.path.dirname(treePath), "model_{}.txt".format(baseName))
-    reducedAlignPath = os.path.join(os.path.dirname(treePath), "alignment_{}.txt".format(baseName))
-    
-    taxa = [n.taxon.label for n in tree.leaf_nodes()]
-    align = sequenceutils.readFromFasta(alignmentPath)
-    sequenceutils.writeFasta(align, reducedAlignPath, taxa)
-    
-    tree.resolve_polytomies()
-    for edge in tree.edges():
-        edge.length = None
-    treeutils.writeTree(tree, unoptimizedPath)
-    
-    if os.path.exists(workingDir):
-        shutil.rmtree(workingDir)
-    os.makedirs(workingDir)    
-    task = external_tools.runRaxmlNgOptimize(reducedAlignPath, None, unoptimizedPath, workingDir, outModelPath, treePath)
-    external_tools.runCommand(**task)
 
 def getSpanningTreeEdgeSources(startTree, spanningTree):
     edgeSources = set()       
@@ -98,4 +76,4 @@ def createRandomTree(taxa):
     
     tree.is_rooted = False
     return tree  
-    
+

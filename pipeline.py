@@ -60,6 +60,8 @@ def iterateGtm(alignmentPath, startTreeArg, constraintTreePaths, guideTreeArg, w
         if not os.path.exists(startTreeArg):
             startTreePath = os.path.join(workingDir, "start_tree.tre")
             methods.buildTree(startTreeArg, startTreePath, alignmentPath = alignmentPath)
+            Configs.raxmlModelSourcePath = startTreePath if Configs.raxmlModelSourcePath == "estimate" else Configs.raxmlModelSourcePath
+            
         subsetsDir = os.path.join(workingDir, "subsets")        
         subsetPaths = decomposition.decomposeGuideTree(subsetsDir, alignmentPath, startTreePath, Configs.decompositionMaxSubsetSize, 
                                                        Configs.decompositionMaxNumSubsets, Configs.decompositionStrategy)
@@ -72,8 +74,6 @@ def iterateGtm(alignmentPath, startTreeArg, constraintTreePaths, guideTreeArg, w
         guideTreePath = startTreePath
     guideTree = treeutils.loadTree(guideTreePath)
     
-    print(guideTreePath)
-    print(constraintTreePaths.keys())
     resultTree = gtm.runGtm(constraintTrees, guideTree, Configs.mode)
     treeutils.writeTree(resultTree, outputTreePath)  
 
@@ -101,8 +101,10 @@ def updateScaffoldBranchLengths(inputTreePath, alignmentPath, branchLengthsTreeP
         spanningTree = treeutils.loadTree(branchLengthsTreePath)
     else:
         spanningTree = gtmutils.extractSpanningTree(tree, None, Configs.spanningTreeSize)
-        branchLengthsTreePath = os.path.join(workingDir, "spanning_tree.tre")
-        gtmutils.computeSpanningTree(spanningTree, alignmentPath, branchLengthsTreePath)
+        unoptimizedPath = os.path.join(workingDir, "spanning_tree.tre")
+        branchLengthsTreePath = os.path.join(workingDir, "optimized_spanning_tree.tre")
+        treeutils.writeTree(spanningTree, unoptimizedPath)
+        methods.raxmlEvaluateModelParameters(unoptimizedPath, alignmentPath, methods.getRaxmlModel(), branchLengthsTreePath)
         spanningTree = treeutils.loadTree(branchLengthsTreePath)
     
     gtmutils.applySpanningTreeBranchLengths(tree, spanningTree)
@@ -152,5 +154,9 @@ if __name__ == "__main__":
     parser.add_argument("--decompstrategy", type=str,
                         help="Decomposition strategy (centroid or randomcentroid)",
                         required=False, default="centroid")
+    
+    parser.add_argument("--raxmlmodel", type=str,
+                        help="Model argument for RAxML calls. <Model>, 'estimate', or None (optimize separately for each run)",
+                        required=False, default=None)
 
     main(parser.parse_args())

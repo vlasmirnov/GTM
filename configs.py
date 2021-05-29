@@ -20,6 +20,9 @@ class Configs:
     alignmentPath = None    
     
     dataType = None
+    raxmlModel = None
+    curBestTreePath = None
+    raxmlModelSourcePath = None
     
     iterations = 1
     spanningTreeSize = 200
@@ -41,6 +44,7 @@ class Configs:
             Configs.dataType = sequenceutils.inferDataType(sequencesFile)
             Configs.log("Data type wasn't specified. Inferred data type {} from {}".format(Configs.dataType.upper(), sequencesFile))
         return Configs.dataType 
+    
 
 def buildConfigs(args):
     if args.start is not None:
@@ -77,3 +81,13 @@ def buildConfigs(args):
     Configs.decompositionMaxSubsetSize = args.maxsubsetsize
     Configs.decompositionMaxNumSubsets = args.maxnumsubsets
     Configs.decompositionStrategy = args.decompstrategy
+    
+    if args.raxmlmodel == "estimate":
+        Configs.raxmlModelSourcePath = "estimate"
+        if Configs.startTree is not None and os.path.exists(Configs.startTree):
+            Configs.raxmlModelSourcePath = Configs.startTree        
+    elif args.raxmlmodel is not None and os.path.exists(os.path.abspath(args.raxmlmodel)):
+        Configs.raxmlModelSourcePath = os.path.abspath(args.raxmlmodel)
+    elif args.raxmlmodel is not None:
+        Configs.raxmlModel = args.raxmlmodel
+    

@@ -4,6 +4,9 @@ Created on May 26, 2021
 @author: Vlad
 '''
 
+import os
+import shutil
+
 class Sequence:
     def __init__(self, tag, seq):
         self.tag = tag
@@ -117,6 +120,35 @@ def writePhylip(alignment, filePath, taxa = None):
         textFile.write("{} {}\n".format(len(lines), maxChars))
         for line in lines:
             textFile.write(line)
+
+def writeSubsetsToDir(subsetsDir, alignmentPath, subsets):
+    if os.path.exists(subsetsDir):
+        shutil.rmtree(subsetsDir)
+    os.makedirs(subsetsDir) 
+
+    subsetPaths = {os.path.join(subsetsDir, "subset_{}.txt".format(n+1)) : subset for n, subset in enumerate(subsets)}
+    writeSubsetsToFiles(alignmentPath, subsetPaths)                 
+    return subsetPaths
+            
+def writeSubsetsToFiles(alignmentPath, subsetPaths):
+    fileHandles = {subsetPath : open(subsetPath, "a") for subsetPath in subsetPaths}
+    taxonFiles = {}
+    for path, subset in subsetPaths.items():
+        for taxon in subset:
+            taxonFiles[taxon] = fileHandles[path]
+            
+    with open(alignmentPath) as rf:    
+        for line in rf:
+            if line.startswith('>'):                    
+                tag = line.strip()[1:]
+                if tag in taxonFiles:
+                    taxonFiles[tag].write(line)    
+            elif tag in taxonFiles:
+                taxonFiles[tag].write(line)
+    
+    for path, handle in fileHandles.items():
+        handle.close()                    
+    return subsetPaths
 
 def cleanGapColumns(filePath, cleanFile = None):
     align = readFromFasta(filePath, False)

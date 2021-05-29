@@ -109,14 +109,16 @@ def recurseDistributeNodes(sNode, cNode, cTree):
             attachNodetoNode(sNode, cNode)
         elif cMask in maskEdges and len(maskEdges[cMask].desc) > 1:
             recurseDistributeNodes(maskEdges[cMask].head_node, cNode, cTree)
-        else:            
+        else:
             if not any(len(maskEdges[mask].desc) > 1 for mask in maskEdges):
                 for mask in maskEdges:
                     sNode.remove_child(maskEdges[mask].head_node)
+                if len(sNode.adjacent_nodes())>2:
+                    resolvePolytomy(sNode, sNode.child_nodes())
                 attachNodetoNode(sNode, cNode) 
             elif len(maskEdges) < len(sNode.child_edges()):
                 newDesc = combineDescMaps([maskEdges[mask].desc for mask in maskEdges])
-                if not any(s is not None and b not in s.subEdgeMap and b ^ s.startTreeBitmask not in s.subEdgeMap for s, b in newDesc.items()):
+                if not any(checkBitmaskViolatesSubtree(b, s) for s, b in newDesc.items()):
                     newNode = resolvePolytomy(sNode, [maskEdges[m].head_node for m in maskEdges])
                     recurseDistributeNodes(newNode, cNode, cTree)
                 else:
@@ -146,7 +148,7 @@ def collapseViolatingEdges(startTree, removeConvexityViolations):
         for subtree, bitmask in edge.desc.items():
             if subtree is None:
                 continue
-            if bitmask not in subtree.subEdgeMap and bitmask ^ subtree.startTreeBitmask not in subtree.subEdgeMap: 
+            if checkBitmaskViolatesSubtree(bitmask, subtree):
                 violatingEdge = True
                 break
             elif bitmask != subtree.startTreeBitmask:
@@ -158,6 +160,10 @@ def collapseViolatingEdges(startTree, removeConvexityViolations):
             toRemove.append(edge.head_node)   
              
     collapseEdges(toRemove)
+
+def checkBitmaskViolatesSubtree(bitmask, subtree):
+    return subtree is not None and bitmask & subtree.startTreeBitmask not in subtree.subEdgeMap and \
+        ~bitmask & subtree.startTreeBitmask not in subtree.subEdgeMap
         
 def collapseEdges(headNodes):
     for n in headNodes:
@@ -201,6 +207,7 @@ def rerootConstraintTrees(startTree, constraintTrees):
 def dealWithEdgeLengths(startTree): 
     for edge in startTree.postorder_edge_iter():
         populateEdgeDesc(edge)
+    
     if len(startTree.seed_node.child_edges()) == 2:
         childs = startTree.seed_node.child_edges()
         if buildDescKey(childs[0].desc, True) not in startTree.edgeLengthMap:  
@@ -229,7 +236,7 @@ def labelScaffold(startTree):
                     e.head_node.label = "scaffold_adjacent"
         else:
             edge.subtree = splits[0]
-
+    
 def getEdgeSources(startTree): 
     scaffoldEdgeSources = set()
     constraintEdgeSources = set()

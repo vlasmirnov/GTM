@@ -52,7 +52,7 @@ def decomposeGuideTree(subsetsDir, sequencesPath, guideTreePath, maxSubsetSize, 
         keep = [n.taxon.label for n in tree.leaf_nodes()]
         taxonSubsets.append(keep)
     
-    return writeSubsetsToDir(subsetsDir, sequencesPath, taxonSubsets)
+    return sequenceutils.writeSubsetsToDir(subsetsDir, sequencesPath, taxonSubsets)
 
 def decomposeTree(tree, maxSubsetSize, numSubsets, strategy):
     trees = [tree]
@@ -118,27 +118,4 @@ def getCentroidEdgeRandom(tree, minBound = 5):
             candidates.append(edge)    
     return random.choice(candidates)
 
-def writeSubsetsToDir(subsetsDir, alignmentPath, subsets):
-    if os.path.exists(subsetsDir):
-        shutil.rmtree(subsetsDir)
-    os.makedirs(subsetsDir) 
 
-    subsetPaths = {os.path.join(subsetsDir, "subset_{}.txt".format(n+1)) : subset for n, subset in enumerate(subsets)}
-    fileHandles = {subsetPath : open(subsetPath, "a") for subsetPath in subsetPaths}
-    taxonFiles = {}
-    for path, subset in subsetPaths.items():
-        for taxon in subset:
-            taxonFiles[taxon] = fileHandles[path]
-            
-    with open(alignmentPath) as rf:    
-        for line in rf:
-            if line.startswith('>'):                    
-                tag = line.strip()[1:]
-                if tag in taxonFiles:
-                    taxonFiles[tag].write(line)    
-            elif tag in taxonFiles:
-                taxonFiles[tag].write(line)
-    
-    for path, handle in fileHandles.items():
-        handle.close()                    
-    return subsetPaths
