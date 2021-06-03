@@ -23,6 +23,12 @@ def main(args):
     
     buildConfigs(args)
     
+    regularPipeline()
+    
+    endTime = time.time()
+    print("Finished GTM pipeline in {} seconds..".format(endTime-startTime))
+
+def regularPipeline():
     alignmentPath = Configs.alignmentPath
     startTreeArg = Configs.startTree
     constraintTreePaths = Configs.constraintTrees
@@ -35,9 +41,6 @@ def main(args):
         guideTreeArg = outputPath
         constraintTreePaths = []
     
-    #gtmResultPath = os.path.join(Configs.workingDir, "gtm_result.tre")
-    #shutil.copyfile(outputPath, gtmResultPath)
-    
     branchLengthsTree = Configs.branchLengthsTree
     if branchLengthsTree is not None:  
         gtmResultPath = outputPath  
@@ -46,9 +49,6 @@ def main(args):
         updateScaffoldBranchLengths(gtmResultPath, alignmentPath, branchLengthsTree, workingDir, outputPath)  
         
     shutil.copyfile(outputPath, Configs.outputPath)
-    
-    endTime = time.time()
-    print("Finished GTM pipeline in {} seconds..".format(endTime-startTime))
 
 def iterateGtm(alignmentPath, startTreeArg, constraintTreePaths, guideTreeArg, workingDir, outputTreePath):
     if os.path.exists(workingDir):
@@ -72,6 +72,33 @@ def iterateGtm(alignmentPath, startTreeArg, constraintTreePaths, guideTreeArg, w
     guideTreePath = guideTreeArg
     if guideTreeArg is None:
         guideTreePath = startTreePath
+    elif not os.path.exists(guideTreeArg):
+        guideTreePath = os.path.join(workingDir, "guide_tree.tre")
+        if guideTreeArg == "span":
+            subsets = [s for p, s in subsetPaths.items()]
+            subsets.sort(key = lambda c : len(c))
+            leavesRemaining = Configs.spanningTreeSize        
+            leaves = []
+            for i, cluster in enumerate(subsets):
+                n = min(len(cluster), int(leavesRemaining / (len(subsets) - i)) )
+                leaves.extend(cluster[:n])
+                leavesRemaining = leavesRemaining - n
+            alignPath = os.path.join(workingDir, "spanning_tree_align.txt")
+            sequenceutils.writeSubsetsToFiles(alignmentPath, {alignPath : leaves})
+            
+            '''
+            unoptimizedPath = os.path.join(workingDir, "spanning_tree.tre")    
+            startTree = treeutils.loadTree(startTreePath)
+            spanningTree = startTree.extract_tree_with_taxa([l.taxon for l in leaves])
+            spanningTree.resolve_polytomies()
+            for edge in spanningTree.edges():
+                edge.length = None
+            treeutils.writeTree(spanningTree, unoptimizedPath)
+            '''
+            
+            methods.buildTree("raxml", guideTreePath, alignmentPath = alignPath) #, startTreePath = unoptimizedPath)
+        else:
+            methods.buildTree(guideTreeArg, guideTreePath, alignmentPath = alignmentPath)        
     guideTree = treeutils.loadTree(guideTreePath)
     
     resultTree = gtm.runGtm(constraintTrees, guideTree, Configs.mode)

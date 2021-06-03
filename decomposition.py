@@ -35,7 +35,6 @@ def randomDecomposition(subsetsDir, sequences, numSubsets):
 
 
 def decomposeGuideTree(subsetsDir, sequencesPath, guideTreePath, maxSubsetSize, maxNumSubsets, strategy):
-    sequences = sequenceutils.readFromFasta(sequencesPath, removeDashes = False)
     guideTree = dendropy.Tree.get(path=guideTreePath, schema="newick", preserve_underscores=True)
     guideTree.collapse_basal_bifurcation()
     
@@ -111,11 +110,16 @@ def getCentroidEdge(tree):
 
 def getCentroidEdgeRandom(tree, minBound = 5):
     candidates = []
+    bestBalance = float('inf')
     for edge in tree.postorder_internal_edge_iter():
         if edge.tail_node is None: # or edge.head_node.label == "scaffold":
             continue
         if min(edge.childs, tree.childs - edge.childs) >= minBound:
-            candidates.append(edge)    
-    return random.choice(candidates)
+            candidates.append(edge) 
+        balance = abs(tree.childs/2 - edge.childs)
+        if balance < bestBalance:
+            bestBalance = balance
+            bestEdge = edge     
+    return random.choice(candidates) if len(candidates) > 0 else bestEdge
 
 

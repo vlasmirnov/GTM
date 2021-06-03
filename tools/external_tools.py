@@ -28,6 +28,7 @@ def runCommand(**kwargs):
         raise
     for srcPath, destPath in kwargs.get("fileCopyMap", {}).items():
         shutil.move(srcPath, destPath)
+    return runner
 
 def runClustalOmegaGuideTree(fastaPath, workingDir, outputPath, threads = 1):
     tempPath = os.path.join(os.path.dirname(outputPath), "temp_{}".format(os.path.basename(outputPath)))
@@ -91,7 +92,7 @@ def runRaxmlNg(fastaFilePath, model, workingDir, startTreePath, constraintTreePa
     taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
     return taskArgs
 
-def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPath, outputPath):
+def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPath, outputPath, threads = 8):
     #raxml-ng --evaluate --msa prim.phy --threads 2 --model GTR+G+FC --tree T3.raxml.bestTree --prefix E4
     baseName = os.path.basename(outputPath).replace(".","")
     logFile = os.path.join(workingDir, "{}.raxml.log".format(baseName))
@@ -101,7 +102,7 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPa
             "--evaluate",
             "--msa", fastaFilePath,
             "--prefix", baseName,
-            "--threads", "8",
+            "--threads", str(threads),
             "--tree", treePath]  
     
     if model is not None:
@@ -112,4 +113,21 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPa
         args.extend(["--model", "GTR+G"])
         
     taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {modelFile : outputModelPath, raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
+    return taskArgs
+
+def runRaxmlNgScore(fastaFilePath, model, treePath, workingDir, threads = 8):
+    args = [RAXML_PATH,
+            "--loglh",
+            "--msa", fastaFilePath,
+            "--threads", str(threads),
+            "--tree", treePath]  
+    
+    if model is not None:
+        args.extend(["--model", model])
+    elif Configs.inferDataType(fastaFilePath) == "protein":
+        args.extend(["--model", "LG+G"])
+    else:
+        args.extend(["--model", "GTR+G"])
+        
+    taskArgs = {"command" : subprocess.list2cmdline(args), "workingDir" : workingDir}
     return taskArgs

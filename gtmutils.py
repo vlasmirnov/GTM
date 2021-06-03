@@ -56,24 +56,5 @@ def applySpanningTreeBranchLengths(startTree, spanningTree):
     edgeSources = getSpanningTreeEdgeSources(startTree, spanningTree)
     treeutils.applyEdgeLengths(edgeSources, edgeMap)
 
-def createRandomTree(taxa):
-    #leafs = list(nameSpace.bitmask_taxa_list(nameSpace.all_taxa_bitmask()))
-    random.shuffle(taxa)   
-    
-    center = dendropy.Node()
-    nodes = [dendropy.Node(taxon = taxa[0]), dendropy.Node(taxon = taxa[1]), dendropy.Node(taxon = taxa[2])]
-    center.set_child_nodes((nodes[0], nodes[1], nodes[2]))
-    tree = dendropy.Tree(seed_node=center)
-    
-    for leaf in taxa[3:]:
-        newNode = dendropy.Node(taxon = leaf)
-        edge = random.choice(nodes).edge
-        n = edge.tail_node.new_child()
-        n.add_child(edge.tail_node.remove_child(edge.head_node))
-        n.add_child(newNode)
-        nodes.append(n)
-        nodes.append(newNode)
-    
-    tree.is_rooted = False
-    return tree  
+
 

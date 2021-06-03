@@ -79,6 +79,7 @@ def buildConfigs(args):
         
     Configs.iterations = args.iterations
     Configs.decompositionMaxSubsetSize = args.maxsubsetsize
+    Configs.spanningTreeSize = 2*args.maxsubsetsize
     Configs.decompositionMaxNumSubsets = args.maxnumsubsets
     Configs.decompositionStrategy = args.decompstrategy
     

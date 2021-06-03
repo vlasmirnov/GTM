@@ -4,6 +4,7 @@ Created on Nov 29, 2020
 @author: Vlad
 '''
 
+import random
 import dendropy
 
 def loadTree(treePath):
@@ -36,15 +37,15 @@ def annotateTrees(startTree, constraintTrees):
             if taxon.label in startTree.taxonMap:
                 startTree.taxonMap[taxon.label].taxon = taxon        
         
-        #tree.update_bipartitions()
         for edge in tree.postorder_edge_iter():
             populateEdgeDesc(edge)
+            edge.sourceEdge = (tree, edge, edge.length) if edge.tail_node is not None else None
         populateEdgeMaps(tree)   
-        populateEdgeLengths(tree, False)  
+        populateEdgeKeys(tree, lambda s : s.taxon_namespace.all_taxa_bitmask())  
     
     for edge in startTree.postorder_edge_iter():
         populateEdgeDesc(edge)
-    populateEdgeLengths(startTree, True)
+        edge.sourceEdge = (startTree, edge, edge.length) if edge.tail_node is not None else None
 
 def populateEdgeDesc(edge):
     if len(edge.head_node.child_edges()) == 0:
@@ -70,17 +71,14 @@ def populateEdgeMaps(tree):
         tree.edgeMap[bitmask] = edge
         tree.subEdgeMap[bitmask & tree.startTreeBitmask] = edge 
 
-def populateEdgeLengths(tree, isStartTree):
-    tree.edgeLengthMap = {}
+def populateEdgeKeys(tree, bitmaskFunc):
+    tree.keyEdgeMap = {}
     for edge in tree.preorder_edge_iter():
-        tree.edgeLengthMap[buildDescKey(edge.desc, isStartTree)] = edge.length
+        tree.keyEdgeMap[buildDescKey(edge.desc, bitmaskFunc)] = (edge, edge.length)
 
-def buildDescKey(desc, isStartTree):
-    if isStartTree:
-        keyList = [(s, b & s.startTreeBitmask) for s,b in desc.items() if s is not None]
-        keyList = [(s,b) for s,b in keyList if b != 0]
-    else:
-        keyList = [(s, min(b, ~b & s.taxon_namespace.all_taxa_bitmask())) for s,b in desc.items()]
+def buildDescKey(desc, bitmaskFunc):
+    keyList = [(s, min(b & bitmaskFunc(s), ~b & bitmaskFunc(s))) for s,b in desc.items() if s is not None]
+    keyList = [(s,b) for s,b in keyList if b != 0]
     return frozenset(keyList)
 
 def combineDescMaps(descMaps):
@@ -94,37 +92,42 @@ def distributeNodes(startTree, constraintTrees):
     for tree in constraintTrees:
         recurseDistributeNodes(startTree.seed_node, tree.seed_node, tree) 
     startTree.suppress_unifurcations()
-    #startTree.collapse_basal_bifurcation()     
+    startTree.collapse_basal_bifurcation()     
             
 def recurseDistributeNodes(sNode, cNode, cTree):
     stack = [cNode]
     while stack:
-        cNode = stack.pop()        
+        cNode = stack.pop()       
         cMask = cNode.edge.desc[cTree] & cTree.startTreeBitmask
-        maskEdges = {e.desc[cTree] : e for e in sNode.child_edges() if cTree in e.desc and e.desc[cTree] & cMask == e.desc[cTree]}
+        maskEdges = {e.desc[cTree] & cMask : e for e in sNode.child_edges() if cTree in e.desc and e.desc[cTree] & cMask != 0} #e.desc[cTree]}
         
         if cMask == 0:
             if len(sNode.adjacent_nodes())>2:
-                resolvePolytomy(sNode, sNode.child_nodes())
+                newNode = resolvePolytomy(sNode, sNode.child_nodes())
+                newNode.edge.sourceEdge = sNode.edge.sourceEdge
             attachNodetoNode(sNode, cNode)
-        elif cMask in maskEdges and len(maskEdges[cMask].desc) > 1:
+        
+        elif cMask in maskEdges:
             recurseDistributeNodes(maskEdges[cMask].head_node, cNode, cTree)
-        else:
-            if not any(len(maskEdges[mask].desc) > 1 for mask in maskEdges):
-                for mask in maskEdges:
-                    sNode.remove_child(maskEdges[mask].head_node)
-                if len(sNode.adjacent_nodes())>2:
-                    resolvePolytomy(sNode, sNode.child_nodes())
-                attachNodetoNode(sNode, cNode) 
-            elif len(maskEdges) < len(sNode.child_edges()):
-                newDesc = combineDescMaps([maskEdges[mask].desc for mask in maskEdges])
-                if not any(checkBitmaskViolatesSubtree(b, s) for s, b in newDesc.items()):
-                    newNode = resolvePolytomy(sNode, [maskEdges[m].head_node for m in maskEdges])
-                    recurseDistributeNodes(newNode, cNode, cTree)
-                else:
-                    stack.extend(cNode.child_nodes())
+            
+        elif not any(len(maskEdges[mask].desc) > 1 for mask in maskEdges):
+            for mask in maskEdges:
+                sNode.remove_child(maskEdges[mask].head_node)
+            if len(sNode.adjacent_nodes())>2:
+                newNode = resolvePolytomy(sNode, sNode.child_nodes())
+                newNode.edge.sourceEdge = None
+            attachNodetoNode(sNode, cNode)            
+            
+        elif len(maskEdges) < len(sNode.child_edges()):
+            newDesc = combineDescMaps([maskEdges[mask].desc for mask in maskEdges])
+            if not any(checkBitmaskViolatesSubtree(b, s) for s, b in newDesc.items()):
+                newNode = resolvePolytomy(sNode, [maskEdges[m].head_node for m in maskEdges])
+                newNode.edge.sourceEdge = None
+                recurseDistributeNodes(newNode, cNode, cTree)
             else:
-                stack.extend(cNode.child_nodes())
+                stack.extend(cNode.child_nodes())     
+        else:
+            stack.extend(cNode.child_nodes())
 
 def resolvePolytomy(node, children):
     newNode = dendropy.Node()
@@ -196,29 +199,27 @@ def rerootConstraintTrees(startTree, constraintTrees):
         
         if rootEdge is not None:    
             joinPoint = rootEdge.tail_node.new_child()
-            joinPoint.add_child(rootEdge.tail_node.remove_child(rootEdge.head_node))
+            joinPointChild = rootEdge.tail_node.remove_child(rootEdge.head_node)
+            joinPoint.add_child(joinPointChild)
             tree.reseed_at(joinPoint, update_bipartitions=False,
             collapse_unrooted_basal_bifurcation=False,
             suppress_unifurcations=False)
             for edge in tree.postorder_edge_iter():
                 populateEdgeDesc(edge)
-            populateEdgeMaps(tree)
+                edge.sourceEdge = (tree, edge, edge.length) if edge.tail_node is not None else None
+            populateEdgeMaps(tree)    
+            for child in tree.seed_node.child_edges():
+                child.sourceEdge = joinPointChild.edge.sourceEdge
 
 def dealWithEdgeLengths(startTree): 
     for edge in startTree.postorder_edge_iter():
         populateEdgeDesc(edge)
     
-    if len(startTree.seed_node.child_edges()) == 2:
-        childs = startTree.seed_node.child_edges()
-        if buildDescKey(childs[0].desc, True) not in startTree.edgeLengthMap:  
-            collapseEdges([childs[0].head_node])
-        else:
-            collapseEdges([childs[1].head_node])
-    
     labelScaffold(startTree)    
-    scaffoldEdgeSources, constraintEdgeSources = getEdgeSources(startTree)
+    scaffoldEdgeSources = set((e, startTree) for e in startTree.preorder_edge_iter() if e.tail_node is not None and e.head_node.label == "scaffold")
+    constraintEdgeSources = set((e, e.subtree) for e in startTree.preorder_edge_iter() if e.tail_node is not None and e.head_node.label != "scaffold")
     edgeMap = buildEdgeLengthMap(startTree)
-    #applyEdgeLengths(scaffoldEdgeSources, edgeMap)
+    applyEdgeLengths(scaffoldEdgeSources, edgeMap)
     applyEdgeLengths(constraintEdgeSources, edgeMap)
 
 def labelScaffold(startTree):
@@ -236,18 +237,6 @@ def labelScaffold(startTree):
                     e.head_node.label = "scaffold_adjacent"
         else:
             edge.subtree = splits[0]
-    
-def getEdgeSources(startTree): 
-    scaffoldEdgeSources = set()
-    constraintEdgeSources = set()
-    for edge in startTree.preorder_edge_iter():
-        if edge.tail_node is None:
-            continue  
-        if edge.head_node.label == "scaffold":
-            scaffoldEdgeSources.add((edge, startTree))
-        else:
-            constraintEdgeSources.add((edge, edge.subtree))
-    return scaffoldEdgeSources, constraintEdgeSources
 
 def buildEdgeLengthMap(startTree):
     edgeMap = {}    
@@ -255,22 +244,24 @@ def buildEdgeLengthMap(startTree):
         edgeMap[edge] = {}
         if edge.tail_node is None:
             continue
-        key = buildDescKey(edge.desc, True)
-        edgeMap[startTree, key] = edgeMap.get((startTree, key), []) + [edge]
-        edgeMap[edge][startTree] = key
-        
         splits = [(s, b) for s, b in edge.desc.items() if s is not None and b != s.taxon_namespace.all_taxa_bitmask()]
-        for subtree, bitmask in splits:
-            key = buildDescKey({subtree : bitmask}, False)
-            edgeMap[subtree, key] = edgeMap.get((subtree, key), []) + [edge]
-            edgeMap[edge][subtree] = key
+        treeKeys = {s : buildDescKey({s : b}, lambda s : s.taxon_namespace.all_taxa_bitmask()) for s, b in splits}
+        #treeKeys[startTree] = buildDescKey(edge.desc, lambda s : s.startTreeBitmask)
+        
+        for tree, key in treeKeys.items():
+            if key in tree.keyEdgeMap:
+                sourceEdge, length = tree.keyEdgeMap[key]
+            edgeMap[tree, sourceEdge] = edgeMap.get((tree, sourceEdge), []) + [edge]
+            edgeMap[edge][tree] = (tree, sourceEdge, length)
+        if edge.sourceEdge is not None and edge.sourceEdge[0] == startTree:
+            edgeMap[startTree, edge.sourceEdge[1]] = edgeMap.get((startTree, edge.sourceEdge[1]), []) + [edge]
+            edgeMap[edge][startTree] = edge.sourceEdge
     return edgeMap
 
 def applyEdgeLengths(edgeSources, edgeMap):
-    keySet = set((sourceTree, edgeMap[edge][sourceTree]) for edge, sourceTree in edgeSources)    
-    for sourceTree, key in keySet:        
-        length = sourceTree.edgeLengthMap[key]           
-        edgeGroup = edgeMap[sourceTree, key]        
+    sourceEdges = set(edgeMap[edge][sourceTree] for edge, sourceTree in edgeSources if sourceTree in edgeMap[edge])    
+    for sourceTree, sourceEdge, length in sourceEdges:        
+        edgeGroup = edgeMap[sourceTree, sourceEdge]        
         updateEdges = [e for e in edgeGroup if (e, sourceTree) in edgeSources]
         skipEdges = [e for e in edgeGroup if (e, sourceTree) not in edgeSources]
         try:
@@ -320,4 +311,24 @@ def mapConstraintTreeNodes(startTree, constraintTrees):
                         else:
                             tree.nodeMap[edge.head_node] = startTree.nodeMap[tree, tree.startTreeBitmask, childMask]
 
-
+def createRandomTree(labels):
+    #leafs = list(nameSpace.bitmask_taxa_list(nameSpace.all_taxa_bitmask()))
+    random.shuffle(labels)
+    taxa = [dendropy.Taxon(label) for label in labels]   
+    
+    center = dendropy.Node()
+    nodes = [dendropy.Node(taxon = taxa[0]), dendropy.Node(taxon = taxa[1]), dendropy.Node(taxon = taxa[2])]
+    center.set_child_nodes((nodes[0], nodes[1], nodes[2]))
+    tree = dendropy.Tree(seed_node=center)
+    
+    for leaf in taxa[3:]:
+        newNode = dendropy.Node(taxon = leaf)
+        edge = random.choice(nodes).edge
+        n = edge.tail_node.new_child()
+        n.add_child(edge.tail_node.remove_child(edge.head_node))
+        n.add_child(newNode)
+        nodes.append(n)
+        nodes.append(newNode)
+    
+    tree.is_rooted = False
+    return tree  

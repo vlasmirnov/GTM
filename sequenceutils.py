@@ -50,6 +50,12 @@ def readFromFastaOrdered(filePath, removeDashes = False):
     print("Read " + str(len(sequences)) + " sequences from " + filePath + " ..")
     return sequences
 
+def readTaxaFromFasta(filePath):
+    with open(filePath) as f:
+        taxa = [line.strip()[1:] for line in f if line.startswith('>')]
+    print("Read " + str(len(taxa)) + " taxa from " + filePath + " ..")
+    return taxa
+
 def readFromPhylip(filePath, removeDashes = False):
     sequences = {}    
 
