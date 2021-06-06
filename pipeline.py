@@ -57,14 +57,28 @@ def iterateGtm(alignmentPath, startTreeArg, constraintTreePaths, guideTreeArg, w
     
     startTreePath = startTreeArg
     if len(constraintTreePaths) == 0:
-        if not os.path.exists(startTreeArg):
-            startTreePath = os.path.join(workingDir, "start_tree.tre")
-            methods.buildTree(startTreeArg, startTreePath, alignmentPath = alignmentPath)
-            Configs.raxmlModelSourcePath = startTreePath if Configs.raxmlModelSourcePath == "estimate" else Configs.raxmlModelSourcePath
-            
-        subsetsDir = os.path.join(workingDir, "subsets")        
-        subsetPaths = decomposition.decomposeGuideTree(subsetsDir, alignmentPath, startTreePath, Configs.decompositionMaxSubsetSize, 
-                                                       Configs.decompositionMaxNumSubsets, Configs.decompositionStrategy)
+        if startTreeArg == "fulltreemer":
+            treemerPath = os.path.join(workingDir, "treemer.tre")
+            methods.buildTree("clustal", treemerPath, alignmentPath = alignmentPath)
+            tree = treeutils.loadTree(treemerPath)
+            tree, labelNodeMap, assigns = decomposition.treemer(tree, 10)
+            subsetsDir = os.path.join(workingDir, "subsets")
+            subsets = {label : [label] for label in labelNodeMap}
+            for tax in assigns:
+                subsets[assigns[tax]].append(tax)
+            subsets = list(subsets.values())
+            subsetPaths = sequenceutils.writeSubsetsToDir(subsetsDir, alignmentPath, subsets)
+        else:
+            if not os.path.exists(startTreeArg):
+                startTreePath = os.path.join(workingDir, "start_tree.tre")
+                methods.buildTree(startTreeArg, startTreePath, alignmentPath = alignmentPath)
+                Configs.raxmlModelSourcePath = startTreePath if Configs.raxmlModelSourcePath == "estimate" else Configs.raxmlModelSourcePath
+                
+            subsetsDir = os.path.join(workingDir, "subsets")        
+            subsetPaths = decomposition.decomposeGuideTree(subsetsDir, alignmentPath, startTreePath, Configs.decompositionMaxSubsetSize, 
+                                                           Configs.decompositionMaxNumSubsets, Configs.decompositionStrategy)
+        
+        
         subtreesDir = os.path.join(workingDir, "subtrees")
         constraintTreePaths = buildSubtrees(subtreesDir, subsetPaths, Configs.treeMethod)
     constraintTrees = [treeutils.loadTree(path) for path in constraintTreePaths]
