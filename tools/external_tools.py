@@ -12,6 +12,7 @@ from configs import Configs
 CLUSTAL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "clustal/clustalo")
 FASTTREE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fasttree/FastTree")
 RAXML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "raxmlng/raxml-ng")
+IQTREE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "iqtree/iqtree")
 
 def runCommand(**kwargs):
     if not os.path.exists(kwargs["workingDir"]):
@@ -61,6 +62,33 @@ def runFastTree(fastaFilePath, workingDir, outputPath, mode = "normal", intree =
     taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {tempPath : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
     return taskArgs
 
+def runIqTree(fastaFilePath, model, workingDir, startTreePath, constraintTreePath, outputPath, threads = 8):
+    baseName = os.path.basename(outputPath).replace(".","")
+    iqTreeFile = os.path.join(workingDir, "{}.treefile".format(baseName))
+    args = [IQTREE_PATH,
+            "-s", fastaFilePath,
+            "-pre", baseName,
+            "-nt", str(threads)]
+    
+    if model is not None:
+        args.extend(["-m", model])
+    elif Configs.inferDataType(fastaFilePath) == "protein":
+        args.extend(["-m", "LG+G"])
+    else:
+        args.extend(["-m", "GTR+G"])
+    
+    if constraintTreePath is not None:
+        args.extend(["-g", constraintTreePath])
+    #    args.extend(["-t", "RANDOM"])
+    if startTreePath is not None:
+        args.extend(["-t", startTreePath])
+    #else:
+    #    args.extend(["-t", "BIONJ"])
+        
+    
+    taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {iqTreeFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
+    return taskArgs
+
 def runRaxmlNg(fastaFilePath, model, workingDir, startTreePath, constraintTreePath, outputPath, threads = 8):
     # raxml-ng --msa prim.phy --model GTR+G --prefix T4 --threads 2 --seed 2 --tree pars{25},rand{25}
     baseName = os.path.basename(outputPath).replace(".","")
@@ -71,6 +99,7 @@ def runRaxmlNg(fastaFilePath, model, workingDir, startTreePath, constraintTreePa
             "--msa", fastaFilePath,
             "--prefix", baseName,
             "--threads", str(threads),
+            "--force", "perf_threads",
             "--seed", str(seed)]
     
     if model is not None:
@@ -103,6 +132,7 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPa
             "--msa", fastaFilePath,
             "--prefix", baseName,
             "--threads", str(threads),
+            "--force", "perf_threads",
             "--tree", treePath]  
     
     if model is not None:
@@ -120,6 +150,7 @@ def runRaxmlNgScore(fastaFilePath, model, treePath, workingDir, threads = 8):
             "--loglh",
             "--msa", fastaFilePath,
             "--threads", str(threads),
+            "--force", "perf_threads",
             "--tree", treePath]  
     
     if model is not None:

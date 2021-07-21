@@ -4,39 +4,68 @@ Created on May 27, 2021
 @author: Vlad
 '''
 import os
-import sequenceutils
+import time
+from helpers import sequenceutils
 
 class Configs:
-    treeMethods = ("clustal", "raxml", "fasttree")
+    #treeMethods = ("clustal", "raxml", "fasttree", "iqtree")
     
-    startTree = None
-    outputPath = None
-    mode = None
-    constraintTrees = []   
-    treeMethod = "fasttree"
-    guideTree = None
     workingDir = None
-    branchLengthsTree = None
-    alignmentPath = None    
+    alignmentPath = None   
+    outputPath = None 
     
+    startTreePath = None
+    startTreeMethod = None
+        
+    constraintTreePaths = []   
+    treeMethod = "fasttree"
+    
+    guideTreePath = None
+    guideTreeStrategy = None  
+    
+    polytomyStrategy = None
+    branchLengthStrategy = None
+    
+    mode = None
     dataType = None
-    raxmlModel = None
-    curBestTreePath = None
-    raxmlModelSourcePath = None
+    model = None
+    modelSourcePath = None
+    useInducedStartTreeForML = False
     
     iterations = 1
-    spanningTreeSize = 200
     decompositionMaxNumSubsets = 500
-    decompositionMaxSubsetSize = 1000
+    decompositionMaxSubsetSize = 500
     decompositionStrategy = "centroid"
+    raxmlModelLimit = 1000
+    spanningTreeSize = 500 #None
     
     numCores = os.cpu_count()
+    logPath = None
+    errorPath = None
+    debugPath = None
 
     @staticmethod
     def log(msg, path = None):
         print(msg)
-        #path = Configs.logPath if path is None else path
-        #Configs.writeMsg(msg, path)
+        path = Configs.logPath if path is None else path
+        Configs.writeMsg(msg, path)
+    
+    @staticmethod
+    def error(msg, path = None):
+        Configs.log(msg)
+        path = Configs.errorPath if path is None else path
+        Configs.writeMsg(msg, path)
+    
+    @staticmethod
+    def debug(msg, path = None):
+        path = Configs.debugPath if path is None else path
+        Configs.writeMsg(msg, path)
+    
+    @staticmethod
+    def writeMsg(msg, path):
+        if path is not None:
+            with open(path, 'a') as logFile:
+                logFile.write("{}    {}\n".format(time.strftime("%Y-%m-%d %H:%M:%S"), msg))
 
     @staticmethod
     def inferDataType(sequencesFile):
@@ -45,50 +74,59 @@ class Configs:
             Configs.log("Data type wasn't specified. Inferred data type {} from {}".format(Configs.dataType.upper(), sequencesFile))
         return Configs.dataType 
     
-
 def buildConfigs(args):
-    if args.start is not None:
-        Configs.startTree = os.path.abspath(args.start) if os.path.exists(os.path.abspath(args.start)) else args.start   
-    if args.guide is not None:
-        Configs.guideTree = os.path.abspath(args.guide) if os.path.exists(os.path.abspath(args.guide)) else args.guide    
+    if args.start is not None and os.path.exists(os.path.abspath(args.start)):
+        Configs.startTreePath = os.path.exists(os.path.abspath(args.start))
+    elif args.start is not None:
+        Configs.startTreeMethod = args.start
+
+    if args.guide is not None and os.path.exists(os.path.abspath(args.guide)):
+        Configs.guideTreePath = os.path.abspath(args.guide)
+    elif args.guide is not None:
+        Configs.guideTreeStrategy = args.guide    
     
     Configs.outputPath = os.path.abspath(args.output)
-    Configs.mode = args.mode
-    
+    if args.alignment is not None:
+        Configs.alignmentPath = os.path.abspath(args.alignment) if os.path.exists(os.path.abspath(args.alignment)) else args.alignment
     Configs.workingDir = os.path.join(os.path.dirname(Configs.outputPath), "gtm_working_dir")
     Configs.workingDir = os.path.abspath(args.directory) if args.directory is not None else Configs.workingDir
     if not os.path.exists(Configs.workingDir):
         os.makedirs(Configs.workingDir)
     
-    if len(args.trees) == 1 and args.trees[0].lower() in Configs.treeMethods:
-        Configs.constraintTrees = []
+    if len(args.trees) == 1 and not os.path.exists(os.path.abspath(args.trees[0])):
         Configs.treeMethod = args.trees[0]
     else:
         for p in args.trees:
             path = os.path.abspath(p)
             if os.path.isdir(path):
                 for filename in os.listdir(path):
-                    Configs.constraintTrees.append(os.path.join(path, filename))
+                    Configs.constraintTreePaths.append(os.path.join(path, filename))
             else:
-                Configs.constraintTrees.append(path)
+                Configs.constraintTreePaths.append(path)
     
-    if args.branchlengthstree is not None:
-        Configs.branchLengthsTree = os.path.abspath(args.branchlengthstree) if os.path.exists(os.path.abspath(args.branchlengthstree)) else args.branchlengthstree
-    if args.alignment is not None:
-        Configs.alignmentPath = os.path.abspath(args.alignment) if os.path.exists(os.path.abspath(args.alignment)) else args.alignment
+    Configs.polytomyStrategy = args.polytomies
+    if args.branchlengths is not None:
+        Configs.branchLengthStrategy = os.path.abspath(args.branchlengths) if os.path.exists(os.path.abspath(args.branchlengths)) else args.branchlengths
         
     Configs.iterations = args.iterations
     Configs.decompositionMaxSubsetSize = args.maxsubsetsize
-    Configs.spanningTreeSize = 2*args.maxsubsetsize
+    Configs.spanningTreeSize = args.refinertreesize
     Configs.decompositionMaxNumSubsets = args.maxnumsubsets
     Configs.decompositionStrategy = args.decompstrategy
     
-    if args.raxmlmodel == "estimate":
-        Configs.raxmlModelSourcePath = "estimate"
-        if Configs.startTree is not None and os.path.exists(Configs.startTree):
-            Configs.raxmlModelSourcePath = Configs.startTree        
-    elif args.raxmlmodel is not None and os.path.exists(os.path.abspath(args.raxmlmodel)):
-        Configs.raxmlModelSourcePath = os.path.abspath(args.raxmlmodel)
-    elif args.raxmlmodel is not None:
-        Configs.raxmlModel = args.raxmlmodel
+    if args.model == "estimate":
+        Configs.modelSourcePath = "estimate"
+        if Configs.startTreePath is not None and os.path.exists(Configs.startTreePath):
+            Configs.modelSourcePath = Configs.startTreePath       
+    elif args.model is not None and os.path.exists(os.path.abspath(args.model)):
+        Configs.modelSourcePath = os.path.abspath(args.model)
+    elif args.model is not None:
+        Configs.model = args.model
+    
+    Configs.mode = args.mode
+    Configs.useInducedStartTreeForML = args.useinducedstarttreeforml.lower() == "true"
+        
+    Configs.logPath = os.path.join(Configs.workingDir, "log.txt")    
+    Configs.errorPath = os.path.join(Configs.workingDir, "log_errors.txt")
+    Configs.debugPath = os.path.join(Configs.workingDir, "log_debug.txt") 
     
