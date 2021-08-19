@@ -18,14 +18,14 @@ def runCommand(**kwargs):
     if not os.path.exists(kwargs["workingDir"]):
         os.makedirs(kwargs["workingDir"])
     command = kwargs["command"]
-    print("Running an external tool, command: {}".format(command))
+    Configs.debug("Running an external tool, command: {}".format(command))
     runner = subprocess.run(command, shell = True, cwd = kwargs["workingDir"], universal_newlines = True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     try:    
         runner.check_returncode()
     except:
-        print("Command encountered error: {}".format(command))
-        print("Exit code: {}".format(runner.returncode))
-        print("Output: {}".format(runner.stdout))
+        Configs.error("Command encountered error: {}".format(command))
+        Configs.error("Exit code: {}".format(runner.returncode))
+        Configs.error("Output: {}".format(runner.stdout))
         raise
     for srcPath, destPath in kwargs.get("fileCopyMap", {}).items():
         shutil.move(srcPath, destPath)
@@ -98,7 +98,7 @@ def runRaxmlNg(fastaFilePath, model, workingDir, startTreePath, constraintTreePa
     args = [RAXML_PATH,
             "--msa", fastaFilePath,
             "--prefix", baseName,
-            "--threads", str(threads),
+            "--threads", "auto{{{}}}".format(threads),
             "--force", "perf_threads",
             "--seed", str(seed)]
     
@@ -121,7 +121,7 @@ def runRaxmlNg(fastaFilePath, model, workingDir, startTreePath, constraintTreePa
     taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
     return taskArgs
 
-def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPath, outputPath, threads = 8):
+def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputLogPath, outputModelPath, outputPath, threads = 8):
     #raxml-ng --evaluate --msa prim.phy --threads 2 --model GTR+G+FC --tree T3.raxml.bestTree --prefix E4
     baseName = os.path.basename(outputPath).replace(".","")
     logFile = os.path.join(workingDir, "{}.raxml.log".format(baseName))
@@ -131,7 +131,7 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPa
             "--evaluate",
             "--msa", fastaFilePath,
             "--prefix", baseName,
-            "--threads", str(threads),
+            "--threads", "auto{{{}}}".format(threads),
             "--force", "perf_threads",
             "--tree", treePath]  
     
@@ -142,14 +142,16 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputModelPa
     else:
         args.extend(["--model", "GTR+G"])
         
-    taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {modelFile : outputModelPath, raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
+    taskArgs = {"command" : subprocess.list2cmdline(args), 
+                "fileCopyMap" : {logFile : outputLogPath, modelFile : outputModelPath, raxmlFile : outputPath}, 
+                "workingDir" : workingDir, "outputFile" : outputPath}
     return taskArgs
 
 def runRaxmlNgScore(fastaFilePath, model, treePath, workingDir, threads = 8):
     args = [RAXML_PATH,
             "--loglh",
             "--msa", fastaFilePath,
-            "--threads", str(threads),
+            "--threads", "auto{{{}}}".format(threads),
             "--force", "perf_threads",
             "--tree", treePath]  
     

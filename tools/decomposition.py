@@ -22,36 +22,38 @@ def decomposeSequences(context):
 '''
 
 def decomposeSequences(context, workingDir):
-    if context.decompositionStrategy == "fulltreemer":
+    subsetsDir = os.path.join(workingDir, "subsets")
+    
+    if Configs.decompositionStrategy == "fulltreemer":
         subsetPaths = treemerDecomposition(workingDir, context.alignmentPath, context.startTreePath)
-    elif context.decompositionStrategy == "random":
+    elif Configs.decompositionStrategy == "random":
         subsetPaths = randomDecomposition(workingDir, context.alignmentPath, context.startTreePath)
-    elif context.decompositionStrategy == "random_postorder":
+    elif Configs.decompositionStrategy == "random_postorder":
         subsetPaths = randomPostorderDecomposition(workingDir, context.alignmentPath, context.startTreePath)
-    elif context.decompositionStrategy == "random_postorder_stagger":
+    elif Configs.decompositionStrategy == "random_postorder_stagger":
         subsetPaths = randomPostorderStaggeredDecomposition(workingDir, context.alignmentPath, context.startTreePath)
-    elif context.decompositionStrategy == "random_postorder_stagger_skip":
+    elif Configs.decompositionStrategy == "random_postorder_stagger_skip":
         subsetPaths = randomPostorderStaggeredSkipDecomposition(workingDir, context.alignmentPath, context.startTreePath)
-    elif context.decompositionStrategy == "random_p_pss":
+    elif Configs.decompositionStrategy == "random_p_pss":
         if context.iterations % 2 == 0:
             subsetPaths = randomPostorderDecomposition(workingDir, context.alignmentPath, context.startTreePath)
         elif context.iterations % 2 == 1:
             subsetPaths = randomPostorderStaggeredSkipDecomposition(workingDir, context.alignmentPath, context.startTreePath)
-    elif context.decompositionStrategy == "random_p_rc":
+    elif Configs.decompositionStrategy == "random_p_rc":
         if context.iterations % 2 == 0:
             subsetPaths = randomPostorderDecomposition(workingDir, context.alignmentPath, context.startTreePath)
         elif context.iterations % 2 == 1:
-            subsetPaths = decomposeGuideTree(context.subsetsDir, context.alignmentPath, context.startTreePath, 
+            subsetPaths = decomposeGuideTree(subsetsDir, context.alignmentPath, context.startTreePath, 
                                              Configs.decompositionMaxSubsetSize, Configs.decompositionMaxNumSubsets, "randomcentroid")
-    elif context.decompositionStrategy == "random_rc_p":
+    elif Configs.decompositionStrategy == "random_rc_p":
         if context.iterations % 2 == 0:  
-            subsetPaths = decomposeGuideTree(context.subsetsDir, context.alignmentPath, context.startTreePath, 
+            subsetPaths = decomposeGuideTree(subsetsDir, context.alignmentPath, context.startTreePath, 
                                              Configs.decompositionMaxSubsetSize, Configs.decompositionMaxNumSubsets, "randomcentroid")
         elif context.iterations % 2 == 1:
             subsetPaths = randomPostorderDecomposition(workingDir, context.alignmentPath, context.startTreePath)
     else:                
-        subsetPaths = decomposeGuideTree(context.subsetsDir, context.alignmentPath, context.startTreePath, Configs.decompositionMaxSubsetSize, 
-                                                       Configs.decompositionMaxNumSubsets, context.decompositionStrategy)
+        subsetPaths = decomposeGuideTree(subsetsDir, context.alignmentPath, context.startTreePath, Configs.decompositionMaxSubsetSize, 
+                                                       Configs.decompositionMaxNumSubsets, Configs.decompositionStrategy)
     return subsetPaths
 
 def randomDecompositionOld(subsetsDir, sequences, numSubsets):
@@ -312,40 +314,76 @@ def randomPostorderStaggeredSkipDecomposition(workingDir, alignmentPath, startTr
             pos = pos + n
     return sequenceutils.writeSubsetsToDir(subsetsDir, alignmentPath, subsets)
 
-def guideTreeSpan(workingDir, guideTreePath, **kwargs):
-    subsets = [s for p, s in kwargs["subsetPaths"].items()]
-    subsets.sort(key = lambda c : len(c))
-    leavesRemaining = Configs.spanningTreeSize        
-    leaves = []
-    for i, cluster in enumerate(subsets):
-        n = min(len(cluster), int(leavesRemaining / (len(subsets) - i)) )
-        leaves.extend(cluster[:n])
-        leavesRemaining = leavesRemaining - n
-    alignPath = os.path.join(workingDir, "guide_tree_align.txt")
-    sequenceutils.writeSubsetsToFiles(kwargs["alignmentPath"], {alignPath : leaves})
-    startTreePath = kwargs.get("startTreePath")
-    model = kwargs.get("model")
-    if startTreePath is not None:
-        startTreePath = methods.extractInducedTree(workingDir, startTreePath, alignPath)        
-    methods.buildTree(Configs.treeMethod, guideTreePath, alignmentPath = alignPath, startTreePath = startTreePath, model = model)
+def sampleEvenlyOld(itemList, numSamples):
+    if len(itemList) <= numSamples:
+        return itemList
     
-def guideTreeSpanDiverse(workingDir, guideTreePath, **kwargs):
-    subtrees = list(kwargs["subtreePaths"].keys())
-    leavesRemaining = Configs.decompositionMaxSubsetSize       
-    leaves = []
-    for i, path in enumerate(subtrees):
-        subTree = treeutils.loadTree(path)
-        taxa = [n.taxon.label for n in subTree.postorder_node_iter() if n.taxon is not None]
-        nmax = min(len(taxa), int(leavesRemaining / (len(subtrees) - i)))
-        n = math.ceil(len(taxa) / nmax)        
-        sample = taxa[random.randint(0,n-1) :: n]
-        leaves.extend(sample)
-        leavesRemaining = leavesRemaining - len(sample)
-        #print(len(sample))
-    alignPath = os.path.join(workingDir, "guide_tree_align.txt")
-    sequenceutils.writeSubsetsToFiles(kwargs["alignmentPath"], {alignPath : leaves})
-    startTreePath = kwargs.get("startTreePath")
-    model = kwargs.get("model")
-    if startTreePath is not None:
-        startTreePath = methods.extractInducedTree(workingDir, startTreePath, alignPath)    
-    methods.buildTree(Configs.treeMethod, guideTreePath, alignmentPath = alignPath, startTreePath = startTreePath, model = model)
+    samples = []
+    rotator = random.randint(0, len(itemList)-1)
+    itemList = itemList[rotator:] + itemList[:rotator]
+    pos = 0        
+    while len(samples) < numSamples:
+        remaining = len(itemList) - pos
+        n = int(remaining / (numSamples - len(samples)))
+        samples.append(itemList[pos])
+        pos = pos + n
+    return samples
+
+def sampleEvenly(itemList, numSamples, values = None):
+    if len(itemList) <= numSamples:
+        return itemList
+    
+    samples = []
+    rotator = random.randint(0, len(itemList)-1)
+    itemList = itemList[rotator:] + itemList[:rotator]
+    pos = 0        
+    while len(samples) < numSamples:
+        remainingItems = len(itemList) - pos
+        remainingSamples = numSamples - len(samples)
+        if remainingSamples <= 0.5 * remainingItems:
+            n = int(remainingItems / remainingSamples)
+            if values is None:
+                samples.append(itemList[pos])
+            else:
+                best = max(itemList[pos : pos + n], key = lambda x : values[x])
+                samples.append(best)
+            pos = pos + n
+        else:
+            n = int(remainingItems / (remainingItems - remainingSamples))
+            if values is None:
+                samples.extend(itemList[pos : pos + n - 1])
+            else:
+                sortedSlice = sorted(itemList[pos : pos + n], key = lambda x : values[x])
+                samples.extend(sortedSlice[1:])    
+            pos = pos + n
+            
+    Configs.log("Extracted {} samples..".format(len(samples)))
+    return samples
+
+def sampleLongestRandom6(itemSets, numTaxa, values):
+    samples = []
+    numRemaining = numTaxa
+    for k, subset in enumerate(itemSets):
+        sampleSize = min(len(subset), int(numRemaining / (len(itemSets) - k)))
+        numRemaining = numRemaining - sampleSize
+        
+        sortedByLength = sorted(subset, key = lambda x : values[x], reverse = True)
+        #topQuartileTaxon = sortedByLength[int(0.25*len(sortedByLength))]
+        topLength = values[sortedByLength[0]]
+        fullLength = []
+        notFullLength = []
+        for t in sortedByLength:
+            if abs(values[t] - topLength) < 0.25 * topLength:
+                fullLength.append(t)
+            else:
+                notFullLength.append(t) 
+        
+        Configs.log("Found {}/{}/{} full-length sequences..".format(len(fullLength), len(subset), sampleSize))        
+        random.shuffle(fullLength)
+        random.shuffle(notFullLength)  
+        allTaxa = fullLength + notFullLength  
+        for taxon in allTaxa[:sampleSize]:
+            samples.append(taxon)
+    
+    Configs.log("Extracted {} samples..".format(len(samples)))
+    return samples

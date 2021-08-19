@@ -6,7 +6,6 @@ Created on Jul 15, 2021
 
 from helpers import treeutils, sequenceutils
 import os
-import shutil
 import time
 from tools import methods
 from configs import Configs
@@ -40,22 +39,22 @@ def resolvePolytomies(inputTreePath, strategy, workingDir, model, alignmentPath,
     Configs.log("Resolving polytomies using method {}..".format(strategy))
     tree = treeutils.loadTree(inputTreePath)
     incidentEdges = lambda node : [e for e in node.incident_edges() if e.tail_node is not None]
+    
     polytomies = [node for node in tree.preorder_internal_node_iter() if len(incidentEdges(node)) > 3]
-    Configs.log("Tree has {} leaves and {} internal edges..".format(len(tree.leaf_nodes()), len(tree.internal_edges(exclude_seed_edge = True))))
-    if len(polytomies) > 0:
+    Configs.log("Tree has {} leaves and {} polytomies..".format(len(tree.leaf_nodes()), len(polytomies)))
+    while len(polytomies) > 0:
         if strategy.lower() == "random":
             tree.resolve_polytomies()
         else:
-            if os.path.exists(workingDir):
-                shutil.rmtree(workingDir)
-            os.makedirs(workingDir)
+            if not os.path.exists(workingDir):
+                os.makedirs(workingDir)
             
             polyEdges = set()
             for node in polytomies:
                 for edge in node.incident_edges():
                     polyEdges.add(edge)    
             Configs.log("Found {} polytomies and {} polytomy-incident edges..".format(len(polytomies), len(polyEdges)))  
-            spanningTree = treeutils.extractSpanningTree(tree, Configs.spanningTreeSize, polyEdges)
+            spanningTree = treeutils.extractSpanningTree(tree, Configs.polytomyTreeSize, polyEdges, spanInternalNodes = False)
             unresolvedPath = os.path.join(workingDir, "unresolved_spanning_tree.tre")
             resolvedPath = os.path.join(workingDir, "resolved_spanning_tree.tre")
             spanningAlignPath = os.path.join(workingDir, "alignment_spanning_tree.txt") 
@@ -69,37 +68,37 @@ def resolvePolytomies(inputTreePath, strategy, workingDir, model, alignmentPath,
                 model = methods.estimateRaxmlModel(model, alignmentPath)
             methods.buildTree(strategy, resolvedPath, alignmentPath = spanningAlignPath, constraintTreePath = unresolvedPath, model = model)
             spanningTree = treeutils.loadTree(resolvedPath)
-            Configs.log("Resolved polytomy resolution starting tree has {} leaves and {} internal edges..".format(
-                len(spanningTree.leaf_nodes()), len(spanningTree.internal_edges(exclude_seed_edge = True))))
-            
+                        
             gtmContext = GtmContext(startTree = tree, constraintTrees = [spanningTree])
             gtm_operations.annotateTrees(gtmContext)
             gtm_operations.rerootConstraintTrees(gtmContext)  
             gtm_operations.distributeNodes(gtmContext)
-            Configs.log("Resolved tree has {} leaves and {} internal edges..".format(len(tree.leaf_nodes()), len(tree.internal_edges(exclude_seed_edge = True))))
-            
+            #Configs.log("New tree has {} leaves and {} internal edges..".format(len(tree.leaf_nodes()), len(tree.internal_edges(exclude_seed_edge = True))))
             edges = set(e for e in tree.preorder_edge_iter() if e.length is None or e.length <= 0)
             gtm_operations.applyEdgeLengths(gtmContext, edges)
+            
+            polytomies = [node for node in tree.preorder_internal_node_iter() if len(incidentEdges(node)) > 3]
+            Configs.log("New tree has {} leaves and {} polytomies..".format(len(tree.leaf_nodes()), len(polytomies)))
             
     treeutils.writeTree(tree, outputTreePath)
         
 def resolveBranchLengths(inputTreePath, strategy, workingDir, model, alignmentPath, outputTreePath):
     Configs.log("Resolving missing branch lengths using method {}..".format(strategy))
     tree = treeutils.loadTree(inputTreePath)
+    
     missingLengths = set(e for e in tree.preorder_edge_iter() if e.tail_node is not None and (e.length is None or e.length <= 0))
     Configs.log("Tree has {} edges with missing or non-positive lengths..".format(len(missingLengths)))
-    if len(missingLengths) > 0 and strategy is not None:
+    while len(missingLengths) > 0 and strategy is not None:
         if os.path.exists(strategy):
             spanningTree = treeutils.loadTree(strategy)
         else:
-            if os.path.exists(workingDir):
-                shutil.rmtree(workingDir)
-            os.makedirs(workingDir)
+            if not os.path.exists(workingDir):
+                os.makedirs(workingDir)
             
             for edge in list(missingLengths):
                 for nbr in edge.get_adjacent_edges():
                     missingLengths.add(nbr)
-            spanningTree = treeutils.extractSpanningTree(tree, Configs.spanningTreeSize, missingLengths)
+            spanningTree = treeutils.extractSpanningTree(tree, Configs.branchLengthTreeSize, missingLengths)
             unoptimizedPath = os.path.join(workingDir, "unoptimized_spanning_tree.tre")
             optimizedPath = os.path.join(workingDir, "optimized_spanning_tree.tre")
             Configs.log("Using branch length resolution starting tree with {} leaves and {} internal edges..".format(
@@ -113,7 +112,7 @@ def resolveBranchLengths(inputTreePath, strategy, workingDir, model, alignmentPa
             
         applySpanningTreeBranchLengths(tree, spanningTree)
         missingLengths = set(e for e in tree.preorder_edge_iter() if e.tail_node is not None and (e.length is None or e.length <= 0))
-        Configs.log("Refined tree has {} edges with missing or non-positive lengths..".format(len(missingLengths)))
+        Configs.log("New tree has {} edges with missing or non-positive lengths..".format(len(missingLengths)))
     treeutils.writeTree(tree, outputTreePath)  
 
 def applySpanningTreeBranchLengths(startTree, spanningTree):

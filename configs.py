@@ -22,6 +22,7 @@ class Configs:
     
     guideTreePath = None
     guideTreeStrategy = None  
+    guideTreeMethod = None
     
     polytomyStrategy = None
     branchLengthStrategy = None
@@ -31,13 +32,17 @@ class Configs:
     model = None
     modelSourcePath = None
     useInducedStartTreeForML = False
+    trackMLScores = False
     
     iterations = 1
-    decompositionMaxNumSubsets = 500
+    decompositionMaxNumSubsets = 1000
     decompositionMaxSubsetSize = 500
     decompositionStrategy = "centroid"
-    raxmlModelLimit = 1000
-    spanningTreeSize = 500 #None
+    raxmlModelLimit = 10000
+    polytomyTreeSize = 500
+    branchLengthTreeSize = 50000
+    guideTreeRecursionFactor = 2
+    guideTreeRecursionBaseSize = 1000
     
     numCores = os.cpu_count()
     logPath = None
@@ -58,6 +63,7 @@ class Configs:
     
     @staticmethod
     def debug(msg, path = None):
+        print(msg)
         path = Configs.debugPath if path is None else path
         Configs.writeMsg(msg, path)
     
@@ -76,14 +82,15 @@ class Configs:
     
 def buildConfigs(args):
     if args.start is not None and os.path.exists(os.path.abspath(args.start)):
-        Configs.startTreePath = os.path.exists(os.path.abspath(args.start))
+        Configs.startTreePath = args.start
     elif args.start is not None:
         Configs.startTreeMethod = args.start
 
     if args.guide is not None and os.path.exists(os.path.abspath(args.guide)):
         Configs.guideTreePath = os.path.abspath(args.guide)
     elif args.guide is not None:
-        Configs.guideTreeStrategy = args.guide    
+        Configs.guideTreeMethod = args.guide   
+    Configs.guideTreeStrategy = args.guidetreestrategy 
     
     Configs.outputPath = os.path.abspath(args.output)
     if args.alignment is not None:
@@ -110,9 +117,12 @@ def buildConfigs(args):
         
     Configs.iterations = args.iterations
     Configs.decompositionMaxSubsetSize = args.maxsubsetsize
-    Configs.spanningTreeSize = args.refinertreesize
+    Configs.polytomyTreeSize = args.polytomytreesize
+    Configs.branchLengthTreeSize = args.branchlengthtreesize
     Configs.decompositionMaxNumSubsets = args.maxnumsubsets
     Configs.decompositionStrategy = args.decompstrategy
+    Configs.guideTreeRecursionFactor = args.guidetreerecursionfactor
+    Configs.guideTreeRecursionBaseSize = args.guidetreerecursionbasesize
     
     if args.model == "estimate":
         Configs.modelSourcePath = "estimate"
@@ -125,6 +135,7 @@ def buildConfigs(args):
     
     Configs.mode = args.mode
     Configs.useInducedStartTreeForML = args.useinducedstarttreeforml.lower() == "true"
+    Configs.trackMLScores = args.trackmlscores.lower() == "true"
         
     Configs.logPath = os.path.join(Configs.workingDir, "log.txt")    
     Configs.errorPath = os.path.join(Configs.workingDir, "log_errors.txt")

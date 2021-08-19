@@ -22,7 +22,8 @@ def main(args):
     branchLengthStrategy = args.branchlengths
     alignmentPath = args.alignment
     model = args.model   
-    Configs.spanningTreeSize = args.refinertreesize 
+    Configs.polytomyTreeSize = args.polytomytreesize
+    Configs.branchLengthTreeSize = args.branchlengthtreesize
     
     treePath = tree_refiner_operations.refineTree(treePath, workingDir, polytomyStrategy, branchLengthStrategy, alignmentPath, model)
     shutil.copyfile(treePath, outputPath)
@@ -55,8 +56,12 @@ if __name__ == "__main__":
                         help="Model argument for RAxML/IQTree calls. <Model>, 'estimate', or omit (optimize separately for each run)",
                         required=False, default=None)
     
-    parser.add_argument("--refinertreesize", type=int,
-                        help="Maximum subtree size for Tree Refiner",
-                        required=False, default=500)
+    parser.add_argument("--polytomytreesize", type=int,
+                        help="Maximum subtree size for Polytomy Tree Refiner",
+                        required=False, default=200)
+    
+    parser.add_argument("--branchlengthtreesize", type=int,
+                        help="Maximum subtree size for Branch Length Tree Refiner",
+                        required=False, default=50000)
 
     main(parser.parse_args())

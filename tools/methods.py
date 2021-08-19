@@ -17,13 +17,17 @@ import math
 
 def buildTree(method, outputPath, **kwargs):
     workingDir = os.path.join(os.path.dirname(outputPath), "temp_{}_{}".format(method, os.path.basename(outputPath).split(".")[0]))
+    if os.path.exists(workingDir):
+        shutil.rmtree(workingDir)
+    
+    Configs.log("Building {} tree {}".format(method.upper(), outputPath))
     
     if method.lower() == "clustal":
         task = external_tools.runClustalOmegaGuideTree(kwargs["alignmentPath"], workingDir, outputPath, Configs.numCores)
         external_tools.runCommand(**task)
         
     elif method.lower() == "fasttree":
-        task = external_tools.runFastTree(kwargs["alignmentPath"], workingDir, outputPath, kwargs.get("mode","fast"), kwargs.get("startTreePath"))
+        task = external_tools.runFastTree(kwargs["alignmentPath"], workingDir, outputPath, kwargs.get("mode","normal"), kwargs.get("startTreePath"))
         external_tools.runCommand(**task)
     
     elif method.lower() == "iqtree":
@@ -57,6 +61,7 @@ def raxmlEvaluateModelParameters(treePath, alignmentPath, model, outputPath):
     reducedAlignPath = os.path.join(workingDir, "alignment_{}.txt".format(baseName))    
     unoptimizedPath = os.path.join(workingDir, "unoptimized_{}".format(os.path.basename(treePath)))
     modelPath = os.path.join(workingDir, "model_{}.txt".format(baseName))
+    logPath = os.path.join(workingDir, "raxmllog_{}.txt".format(baseName))
     
     tree = treeutils.loadTree(treePath)
     tree.resolve_polytomies()
@@ -68,14 +73,25 @@ def raxmlEvaluateModelParameters(treePath, alignmentPath, model, outputPath):
     taxa = [n.taxon.label for n in tree.leaf_nodes()]
     sequenceutils.writeSubsetsToFiles(alignmentPath, {reducedAlignPath : taxa})   
     
-    task = external_tools.runRaxmlNgOptimize(reducedAlignPath, model, unoptimizedPath, workingDir, modelPath, outputPath, Configs.numCores)
+    task = external_tools.runRaxmlNgOptimize(reducedAlignPath, model, unoptimizedPath, workingDir, 
+                                             logPath, modelPath, outputPath, Configs.numCores)
     external_tools.runCommand(**task)
-    return modelPath
+    return modelPath, logPath
 
-def raxmlGetScore(treePath, alignmentPath, model):
+def raxmlGetScore(treePath, alignmentPath, model, clean = False):
+    if clean:        
+        tree = treeutils.loadTree(treePath)
+        tree.resolve_polytomies()
+        tree.suppress_unifurcations()
+        for edge in tree.edges():
+            if edge.length is None or edge.length < 0:
+                edge.length = 0
+        treePath = os.path.join(os.path.dirname(treePath), "clean_{}".format(os.path.basename(treePath)))
+        treeutils.writeTree(tree, treePath)
+    
     task = external_tools.runRaxmlNgScore(alignmentPath, model, treePath, os.path.dirname(treePath), Configs.numCores)
     runner = external_tools.runCommand(**task)
-    lines = runner.stdout.decode("utf-8").splitlines()
+    lines = runner.stdout.splitlines()
     for line in lines:
         if line.startswith("Final LogLikelihood: "):
             score = float(line.split("Final LogLikelihood: ")[1])
@@ -95,9 +111,17 @@ def raxmlReadScore(logPath):
                 return score
 
 def estimateRaxmlModel(treePath, alignmentPath, maxLeaves = None):
-    #if Configs.raxmlModel is None and Configs.raxmlModelSourcePath is not None and Configs.raxmlModelSourcePath != "estimate":
-    if maxLeaves is not None:
+    try:
         tree = treeutils.loadTree(treePath)
+        Configs.log("Found valid newick in {}".format(treePath))
+    except:
+        with open(treePath) as f:
+            firstLine = f.readline()
+            model = firstLine.split(',')[0]
+        Configs.log("Found model {} in file {}".format(model, treePath))
+        return model
+    
+    if maxLeaves is not None:
         taxa = [n.taxon.label for n in tree.postorder_node_iter() if n.taxon is not None]
         if len(taxa) > maxLeaves:
             n = math.ceil(len(taxa) / maxLeaves)        
@@ -108,14 +132,16 @@ def estimateRaxmlModel(treePath, alignmentPath, maxLeaves = None):
     
     Configs.log("Estimating RAxML model from {}".format(treePath))
     modelTreePath = os.path.join(os.path.dirname(treePath), "optimized_{}".format(os.path.basename(treePath)))
-    modelPath = raxmlEvaluateModelParameters(treePath, alignmentPath, None, modelTreePath)
+    modelPath, logPath = raxmlEvaluateModelParameters(treePath, alignmentPath, None, modelTreePath)
     model = raxmlReadModel(modelPath)
-    Configs.log("Estimated model {}".format(model))
-    return model
+    score = raxmlReadScore(logPath)
+    Configs.log("Estimated model {} with score {}".format(model, score))
+    return model, score
 
-def extractInducedTree(workingDir, startTreePath, alignmentPath):
-    baseName = "induced_{}_{}".format(os.path.basename(alignmentPath).replace(".", "_"), os.path.basename(startTreePath))
-    inducedTreePath = os.path.join(workingDir, baseName)
+def extractInducedTree(workingDir, startTreePath, alignmentPath, inducedTreePath = None):
+    if inducedTreePath is None:
+        baseName = "induced_{}_{}".format(os.path.basename(alignmentPath).replace(".", "_"), os.path.basename(startTreePath))
+        inducedTreePath = os.path.join(workingDir, baseName)
     taxa = sequenceutils.readTaxaFromFasta(alignmentPath)
     tree = treeutils.loadTree(startTreePath)
     inducedTree = tree.extract_tree_with_taxa_labels(taxa)

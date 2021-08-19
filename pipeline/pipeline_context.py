@@ -4,9 +4,9 @@ Created on Jul 8, 2021
 @author: Vlad
 '''
 
-import dendropy
 import os
-from helpers import treeutils, gtmutils
+from helpers import sequenceutils
+from configs import Configs
 
 
 class PipelineContext:
@@ -15,45 +15,34 @@ class PipelineContext:
         self.workingDir = None
         self.alignmentPath = None
         self.currentTreePath = None
-        self.outputFile = None        
         
-        self.startTreePath = None
-        self.startTreeMethod = None
-        self.startTree = None        
-        
-        self.constraintTreePaths = None
-        self.constraintTrees = None
-        
+        self.startTreePath = None        
+        self.subsetPaths = None
+        self.constraintTreePaths = []
         self.guideTreePath = None
-        self.guideTreeStrategy = None        
-        self.guideTree = None
         
         self.subsetsDir = None
         self.subtreesDir = None
-        self.subsetPaths = None
         
         self.iterations = 0
-        self.decompositionStrategy = None
-        self.mode = None
         self.model = None
         self.modelSourcePath = None
-        self.useInducedStartTreeForML = False
+        self.trackMLScores = False
         
+        self.taxaLengths = None
+        self.topLevelStartTreePath = None
         
         for attr in kwargs:
             vars(self)[attr] = kwargs.get(attr)
         
         if not os.path.exists(self.workingDir):
             os.makedirs(self.workingDir)
-        
-        self.initialize()    
-    
-    def initialize(self):
-        if self.startTree is None and self.startTreePath is not None:
-            self.startTree = treeutils.loadTree(self.startTreePath)
-        if self.constraintTrees is None:
-            self.constraintTrees = [treeutils.loadTree(path) for path in self.constraintTreePaths]
     
     def getStartTreeForML(self):
-        return self.startTreePath if self.useInducedStartTreeForML else None
-            
+        return self.startTreePath if Configs.useInducedStartTreeForML else None
+    
+    def getTaxaLengths(self):
+        if self.taxaLengths is None and self.alignmentPath is not None:
+            sequences = sequenceutils.readFromFasta(self.alignmentPath, removeDashes = True)
+            self.taxaLengths = {t : len(s.seq) for t, s in sequences.items()}
+        return self.taxaLengths

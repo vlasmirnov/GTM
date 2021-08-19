@@ -27,13 +27,12 @@ def main(args):
 def regularPipeline():
     context = PipelineContext(workingDir = Configs.workingDir,
                               alignmentPath = Configs.alignmentPath, 
-                              startTreePath = Configs.startTreePath, startTreeMethod = Configs.startTreeMethod,
+                              startTreePath = Configs.startTreePath,
                               constraintTreePaths = Configs.constraintTreePaths, 
-                              guideTreePath = Configs.guideTreePath, guideTreeStrategy = Configs.guideTreeStrategy,
-                              decompositionStrategy = Configs.decompositionStrategy,
-                              mode = Configs.mode,
-                              model = Configs.model, modelSourcePath = Configs.modelSourcePath,
-                              useInducedStartTreeForML = Configs.useInducedStartTreeForML)
+                              guideTreePath = Configs.guideTreePath, 
+                              model = Configs.model, 
+                              modelSourcePath = Configs.modelSourcePath,
+                              trackMLScores = Configs.trackMLScores)
     
     for i in range(Configs.iterations):
         startTime = time.time()
@@ -44,8 +43,16 @@ def regularPipeline():
         endTime = time.time()
         Configs.log("Finished iteration {} in {} seconds..".format(i+1, endTime-startTime))
     
-    outputPath = tree_refiner_operations.refineTree(context.outputPath, Configs.workingDir, Configs.polytomyStrategy, 
-                                       Configs.branchLengthStrategy, context.alignmentPath, context.model)
+        if i == Configs.iterations - 1 or context.trackMLScores:
+            outputPath = tree_refiner_operations.refineTree(outputPath, workingDir, Configs.polytomyStrategy, 
+                                               Configs.branchLengthStrategy, context.alignmentPath, context.model)
+            context.currentTreePath = outputPath
+        
+        pipeline_operations.logMLScore(context)
+        context.startTreePath = outputPath
+        context.constraintTreePaths = []
+        context.guideTreePath = None
+        context.iterations = context.iterations + 1  
 
     shutil.copyfile(outputPath, Configs.outputPath)
 
@@ -100,9 +107,25 @@ if __name__ == "__main__":
                         help="Decomposition strategy (centroid or randomcentroid)",
                         required=False, default="centroid")
     
-    parser.add_argument("--refinertreesize", type=int,
-                        help="Maximum subtree size for Tree Refiner",
-                        required=False, default=500)
+    parser.add_argument("--polytomytreesize", type=int,
+                        help="Maximum subtree size for Polytomy Tree Refiner",
+                        required=False, default=200)
+    
+    parser.add_argument("--branchlengthtreesize", type=int,
+                        help="Maximum subtree size for Branch Length Tree Refiner",
+                        required=False, default=50000)
+    
+    parser.add_argument("--guidetreestrategy", type=str,
+                        help="Guide tree strategy",
+                        required=False, default=None)
+    
+    parser.add_argument("--guidetreerecursionfactor", type=float,
+                        help="Value by which to divide the dataset size at each level of recursion",
+                        required=False, default=2)
+    
+    parser.add_argument("--guidetreerecursionbasesize", type=int,
+                        help="Dataset size at which to terminate recursion",
+                        required=False, default=1000)
     
     parser.add_argument("--model", type=str,
                         help="Model argument for RAxML/IQTree calls. <Model>, 'estimate', or None (optimize separately for each run)",
@@ -110,6 +133,10 @@ if __name__ == "__main__":
     
     parser.add_argument("--useinducedstarttreeforml", type=str,
                         help="Pass current working tree as a starting tree for ML runs",
+                        required=False, default="false")
+    
+    parser.add_argument("--trackmlscores", type=str,
+                        help="Log the current ML scores",
                         required=False, default="false")
 
     main(parser.parse_args())

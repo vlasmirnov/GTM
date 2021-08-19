@@ -56,6 +56,22 @@ def readTaxaFromFasta(filePath):
     print("Read " + str(len(taxa)) + " taxa from " + filePath + " ..")
     return taxa
 
+def readTaxaLengthsFromFasta(filePath):
+    sequenceLengths = {}
+
+    with open(filePath) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('>'):                    
+                tag = line[1:]
+                sequenceLengths[tag] = 0
+            else :
+                line = line.replace("-", "")
+                sequenceLengths[tag] = sequenceLengths[tag] + len(line)
+
+    print("Read " + str(len(sequenceLengths)) + " sequence lengths from " + filePath + " ..")
+    return sequenceLengths
+
 def readFromPhylip(filePath, removeDashes = False):
     sequences = {}    
 
@@ -137,7 +153,7 @@ def writeSubsetsToDir(subsetsDir, alignmentPath, subsets):
     return subsetPaths
             
 def writeSubsetsToFiles(alignmentPath, subsetPaths):
-    fileHandles = {subsetPath : open(subsetPath, "a") for subsetPath in subsetPaths}
+    fileHandles = {subsetPath : open(subsetPath, "w") for subsetPath in subsetPaths}
     taxonFiles = {}
     for path, subset in subsetPaths.items():
         for taxon in subset:
