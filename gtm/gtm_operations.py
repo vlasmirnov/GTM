@@ -25,6 +25,7 @@ def runGtm(gtmContext):
         rerootConstraintTrees(gtmContext)
         distributeNodes(gtmContext)
         applyEdgeLengths(gtmContext, None)
+        applyNodeLabels(gtmContext, None)
         resultTree = gtmContext.startTree     
     
     endTime = time.time()
@@ -150,27 +151,50 @@ def recurseDistributeNodes(context, sNode, cNode, cTree):
         else:
             stack.extend(cNode.child_nodes())
 
+def buildTreeKeyEdges(context):
+    if context.treeKeyEdges is None:
+        for edge in context.startTree.postorder_edge_iter():
+            gtmutils.populateEdgeDesc(edge)
+        
+        context.treeKeyEdges = {}    
+        for edge in context.startTree.preorder_edge_iter():
+            if edge.tail_node is None:
+                continue
+            splits = [(s, b) for s, b in edge.desc.items() if b != s.taxon_namespace.all_taxa_bitmask()]
+            for tree, bitmask in splits:
+                key = gtmutils.buildEdgeKey(tree, bitmask)
+                if key in tree.edgeMap:
+                    context.treeKeyEdges[tree, key] = context.treeKeyEdges.get((tree, key), []) + [edge]
+
 def applyEdgeLengths(context, edges = None):
     Configs.log("Applying constraint tree edge lengths..")
-    for edge in context.startTree.postorder_edge_iter():
-        gtmutils.populateEdgeDesc(edge)
+    buildTreeKeyEdges(context)
     
-    treeKeyEdges = {}    
     for edge in context.startTree.preorder_edge_iter():
-        if edge.tail_node is None:
-            continue
-        splits = [(s, b) for s, b in edge.desc.items() if b != s.taxon_namespace.all_taxa_bitmask()]
         if edges is None or edge in edges:
             edge.length = None
-        for tree, bitmask in splits:
-            key = gtmutils.buildEdgeKey(tree, bitmask)
-            if key in tree.edgeMap:
-                treeKeyEdges[tree, key] = treeKeyEdges.get((tree, key), []) + [edge]
     
-    for treeKey, edgeList in treeKeyEdges.items():
+    for treeKey, edgeList in context.treeKeyEdges.items():
         tree, key = treeKey
         if len(edgeList) == 1:
             edge = edgeList[0]
             if edges is None or edge in edges:
-                sourceEdge, length = tree.edgeMap[key]
+                sourceEdge, length, label = tree.edgeMap[key]
                 edge.length = length
+
+def applyNodeLabels(context, edges = None):
+    Configs.log("Applying constraint tree node labels..")
+    buildTreeKeyEdges(context)
+    
+    for edge in context.startTree.preorder_edge_iter():
+        if edges is None or edge in edges:
+            edge.head_node.label = None
+    
+    for treeKey, edgeList in context.treeKeyEdges.items():
+        tree, key = treeKey
+        if len(edgeList) == 1:
+            edge = edgeList[0]
+            if edges is None or edge in edges:
+                sourceEdge, length, label = tree.edgeMap[key]
+                edge.head_node.label = label
+

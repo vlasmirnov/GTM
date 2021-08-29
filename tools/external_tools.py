@@ -28,7 +28,8 @@ def runCommand(**kwargs):
         Configs.error("Output: {}".format(runner.stdout))
         raise
     for srcPath, destPath in kwargs.get("fileCopyMap", {}).items():
-        shutil.move(srcPath, destPath)
+        if destPath is not None:
+            shutil.move(srcPath, destPath)
     return runner
 
 def runClustalOmegaGuideTree(fastaPath, workingDir, outputPath, threads = 1):
@@ -117,8 +118,68 @@ def runRaxmlNg(fastaFilePath, model, workingDir, startTreePath, constraintTreePa
     else:
         args.extend(["--tree", "pars{{{}}}".format(1)])
         
+    #print(args)
+    taskArgs = {"command" : subprocess.list2cmdline(args), 
+                "fileCopyMap" : {raxmlFile : outputPath}, 
+                "workingDir" : workingDir, 
+                "outputFile" : outputPath}
+    return taskArgs
+
+def runRaxmlNgBootstrap(fastaFilePath, model, treePath, bsTrees, workingDir, outputPath, threads = 8):
+    baseName = os.path.basename(outputPath).replace(".","")
+    bsTreesFile = os.path.join(workingDir, "{}.raxml.bootstraps".format(baseName))
+
+    seed = 74
+    args = [RAXML_PATH,
+            "--bootstrap",
+            "--bs-trees", str(bsTrees),
+            "--msa", fastaFilePath,
+            "--prefix", baseName,
+            "--threads", "auto{{{}}}".format(threads),
+            "--force", "perf_threads",
+            "--seed", str(seed),
+            "--tree", treePath]
     
-    taskArgs = {"command" : subprocess.list2cmdline(args), "fileCopyMap" : {raxmlFile : outputPath}, "workingDir" : workingDir, "outputFile" : outputPath}
+    if model is not None:
+        args.extend(["--model", model])
+    elif Configs.inferDataType(fastaFilePath) == "protein":
+        args.extend(["--model", "LG+G"])
+    else:
+        args.extend(["--model", "GTR+G"])
+        
+    
+    taskArgs = {"command" : subprocess.list2cmdline(args), 
+                "fileCopyMap" : {bsTreesFile : outputPath}, 
+                "workingDir" : workingDir, 
+                "outputFile" : outputPath}
+    return taskArgs
+
+def runRaxmlNgBootstrapSupport(fastaFilePath, model, treePath, bsTreesPath, workingDir, outputPath, threads = 8):
+    baseName = "{}_support".format(os.path.basename(outputPath).replace(".",""))
+    supportFile = os.path.join(workingDir, "{}.raxml.support".format(baseName))
+    seed = 74
+    args = [RAXML_PATH,
+            "--support",
+            "--bs-trees", bsTreesPath,
+            "--msa", fastaFilePath,
+            "--prefix", baseName,
+            "--threads", "auto{{{}}}".format(threads),
+            "--force", "perf_threads",
+            "--seed", str(seed),
+            "--tree", treePath]
+    
+    if model is not None:
+        args.extend(["--model", model])
+    elif Configs.inferDataType(fastaFilePath) == "protein":
+        args.extend(["--model", "LG+G"])
+    else:
+        args.extend(["--model", "GTR+G"])
+        
+    
+    taskArgs = {"command" : subprocess.list2cmdline(args), 
+                "fileCopyMap" : {supportFile : outputPath}, 
+                "workingDir" : workingDir, 
+                "outputFile" : outputPath}
     return taskArgs
 
 def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputLogPath, outputModelPath, outputPath, threads = 8):
@@ -144,7 +205,8 @@ def runRaxmlNgOptimize(fastaFilePath, model, treePath, workingDir, outputLogPath
         
     taskArgs = {"command" : subprocess.list2cmdline(args), 
                 "fileCopyMap" : {logFile : outputLogPath, modelFile : outputModelPath, raxmlFile : outputPath}, 
-                "workingDir" : workingDir, "outputFile" : outputPath}
+                "workingDir" : workingDir, 
+                "outputFile" : outputPath}
     return taskArgs
 
 def runRaxmlNgScore(fastaFilePath, model, treePath, workingDir, threads = 8):

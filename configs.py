@@ -39,10 +39,14 @@ class Configs:
     decompositionMaxSubsetSize = 500
     decompositionStrategy = "centroid"
     raxmlModelLimit = 10000
-    polytomyTreeSize = 500
+    polytomyTreeSize = 200
     branchLengthTreeSize = 50000
+    bootstrapTreeSize = 200
     guideTreeRecursionFactor = 2
     guideTreeRecursionBaseSize = 1000
+    
+    useBootstrap = True
+    bootstrapTrees = 10
     
     numCores = os.cpu_count()
     logPath = None
@@ -119,6 +123,7 @@ def buildConfigs(args):
     Configs.decompositionMaxSubsetSize = args.maxsubsetsize
     Configs.polytomyTreeSize = args.polytomytreesize
     Configs.branchLengthTreeSize = args.branchlengthtreesize
+    Configs.bootstrapTreeSize = args.bootstraptreesize
     Configs.decompositionMaxNumSubsets = args.maxnumsubsets
     Configs.decompositionStrategy = args.decompstrategy
     Configs.guideTreeRecursionFactor = args.guidetreerecursionfactor
@@ -136,6 +141,9 @@ def buildConfigs(args):
     Configs.mode = args.mode
     Configs.useInducedStartTreeForML = args.useinducedstarttreeforml.lower() == "true"
     Configs.trackMLScores = args.trackmlscores.lower() == "true"
+    
+    Configs.useBootstrap = args.bootstrap.lower() == "true"
+    Configs.bootstrapTrees = args.bootstraptrees
         
     Configs.logPath = os.path.join(Configs.workingDir, "log.txt")    
     Configs.errorPath = os.path.join(Configs.workingDir, "log_errors.txt")

@@ -78,6 +78,17 @@ def raxmlEvaluateModelParameters(treePath, alignmentPath, model, outputPath):
     external_tools.runCommand(**task)
     return modelPath, logPath
 
+def raxmlGetBootstrap(treePath, alignmentPath, model, bsTrees, outputPath):
+    baseName = os.path.basename(treePath).split(".")[0]
+    workingDir = os.path.join(os.path.dirname(treePath), "bootstrapping_{}".format(baseName))
+    if os.path.exists(workingDir):
+        shutil.rmtree(workingDir)
+    os.makedirs(workingDir)
+    
+    task = external_tools.runRaxmlNgBootstrap(alignmentPath, model, treePath, bsTrees, workingDir, outputPath, Configs.numCores)
+    external_tools.runCommand(**task)
+    return outputPath
+
 def raxmlGetScore(treePath, alignmentPath, model, clean = False):
     if clean:        
         tree = treeutils.loadTree(treePath)
@@ -110,6 +121,38 @@ def raxmlReadScore(logPath):
                 score = float(line.split("Final LogLikelihood: ")[1])
                 return score
 
+def estimateRaxmlBootstrapSupport(treePath, alignmentPath, model, bsTrees = Configs.bootstrapTrees):
+    Configs.log("Estimating bootstrap supports with {} replicates for {}".format(bsTrees, treePath))
+    baseName = os.path.basename(treePath).split(".")[0]
+    workingDir = os.path.join(os.path.dirname(treePath), "bootstrapping_{}".format(baseName))
+    if os.path.exists(workingDir):
+        shutil.rmtree(workingDir)
+    os.makedirs(workingDir)
+    
+    bsTreesPath = os.path.join(workingDir, "bstrees_{}".format(os.path.basename(treePath)))
+    outputPath = os.path.join(workingDir, "support_{}".format(os.path.basename(treePath)))
+    reducedAlignPath = os.path.join(workingDir, "alignment_{}.txt".format(baseName))    
+    unoptimizedPath = os.path.join(workingDir, "unoptimized_{}".format(os.path.basename(treePath)))
+    
+    tree = treeutils.loadTree(treePath)
+    tree.resolve_polytomies()
+    tree.suppress_unifurcations()
+    for edge in tree.edges():
+        edge.length = None
+    treeutils.writeTree(tree, unoptimizedPath)
+    taxa = [n.taxon.label for n in tree.leaf_nodes()]
+    sequenceutils.writeSubsetsToFiles(alignmentPath, {reducedAlignPath : taxa}) 
+    
+    task = external_tools.runRaxmlNgBootstrap(reducedAlignPath, model, unoptimizedPath, bsTrees, 
+                                              workingDir, bsTreesPath, Configs.numCores)
+    external_tools.runCommand(**task)
+    
+    task = external_tools.runRaxmlNgBootstrapSupport(reducedAlignPath, model, unoptimizedPath, bsTreesPath, 
+                                              workingDir, outputPath, Configs.numCores)
+    external_tools.runCommand(**task)
+    
+    return outputPath
+
 def estimateRaxmlModel(treePath, alignmentPath, maxLeaves = None):
     try:
         tree = treeutils.loadTree(treePath)
@@ -119,7 +162,7 @@ def estimateRaxmlModel(treePath, alignmentPath, maxLeaves = None):
             firstLine = f.readline()
             model = firstLine.split(',')[0]
         Configs.log("Found model {} in file {}".format(model, treePath))
-        return model
+        return model, None
     
     if maxLeaves is not None:
         taxa = [n.taxon.label for n in tree.postorder_node_iter() if n.taxon is not None]

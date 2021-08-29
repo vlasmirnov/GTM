@@ -44,8 +44,9 @@ def regularPipeline():
         Configs.log("Finished iteration {} in {} seconds..".format(i+1, endTime-startTime))
     
         if i == Configs.iterations - 1 or context.trackMLScores:
-            outputPath = tree_refiner_operations.refineTree(outputPath, workingDir, Configs.polytomyStrategy, 
-                                               Configs.branchLengthStrategy, context.alignmentPath, context.model)
+            estimateBS = Configs.useBootstrap and i ==  Configs.iterations - 1
+            outputPath = tree_refiner_operations.refineTree(outputPath, context.constraintTreePaths, workingDir, Configs.polytomyStrategy, 
+                                               Configs.branchLengthStrategy, estimateBS, context.alignmentPath, context.model)
             context.currentTreePath = outputPath
         
         pipeline_operations.logMLScore(context)
@@ -92,6 +93,10 @@ if __name__ == "__main__":
                         help="Resolve branch lengths (tree method or none)",
                         required=False, default="raxml")
     
+    parser.add_argument("-b", "--bootstrap", type=str,
+                        help="Estimate bootstrap support",
+                        required=False, default="false")
+    
     parser.add_argument("--iterations", type=int,
                         help="Number of GTM iterations", required=False, default=1)
     
@@ -114,6 +119,14 @@ if __name__ == "__main__":
     parser.add_argument("--branchlengthtreesize", type=int,
                         help="Maximum subtree size for Branch Length Tree Refiner",
                         required=False, default=50000)
+    
+    parser.add_argument("--bootstraptreesize", type=int,
+                        help="Maximum subtree size for Bootstrap Tree Refiner",
+                        required=False, default=200)
+    
+    parser.add_argument("--bootstraptrees", type=int,
+                        help="Number of bootstrap replicates to use",
+                        required=False, default=10)
     
     parser.add_argument("--guidetreestrategy", type=str,
                         help="Guide tree strategy",

@@ -14,9 +14,11 @@ class GtmContext:
         
         self.startTree = None
         self.constraintTrees = None
-        self.guideTree = None
+        self.guideTree = None     
         
         self.mode = None
+        
+        self.treeKeyEdges = None
         
         #self.outputFile = None
         #self.workingDir = None

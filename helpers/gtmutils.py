@@ -23,7 +23,7 @@ def populateEdgeMaps(tree):
     tree.subEdgeMap = {}    
     for edge in tree.preorder_edge_iter():
         bitmask = edge.desc[tree]
-        tree.edgeMap[buildEdgeKey(tree, bitmask)] = (edge, edge.length)
+        tree.edgeMap[buildEdgeKey(tree, bitmask)] = (edge, edge.length, edge.head_node.label)
         tree.subEdgeMap[bitmask & tree.startTreeBitmask] = edge 
 
 def buildEdgeKey(tree, bitmask):
